@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: BuildSpy
+## Notes: Grab other players' Character Advancement builds (/ains), browse them with real Skill Card rarities, share them as text, and reproduce them: auto-place your Skill Cards and push the build into Rapid Rolling.
+## Author: sad0 & claude
+## Version: 6.3
+## OptionalDeps: sad0-QoL
+## SavedVariables: AscensionInspectorDB
+
+AscensionInspector.lua
+SkillCardPlanner.lua
