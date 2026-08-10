@@ -72,7 +72,11 @@ you in chat to double-check the result yourself.
 
 - **→ Auto-Roll** — if you also run the [AscensionAutoRoll] addon, this sends
   the build straight to it: opens its window, pastes the build link and runs
-  its Analyze. You still press **Start** there yourself.
+  its Analyze. You still press **Start** there yourself. (The button is greyed
+  out when AscensionAutoRoll isn't installed.)
+
+The **Accelerated Roll** toggle (bottom-right of the window) skips the
+Wildcard dice reveal animation, so a rolled spell appears instantly.
 
 [AscensionAutoRoll]: https://www.curseforge.com/wow/addons
 

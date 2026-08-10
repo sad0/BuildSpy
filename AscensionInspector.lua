@@ -779,7 +779,7 @@ bClose:SetPoint("TOPRIGHT", 2, 2)
 -- so the text stops before the two top-right buttons instead of under them
 local bTitle = bui:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 bTitle:SetPoint("TOPLEFT", 12, -9)
-bTitle:SetWidth(555)
+bTitle:SetWidth(495)   -- v6.9: 3-button top-right cluster
 bTitle:SetHeight(14)
 bTitle:SetJustifyH("LEFT")
 if bTitle.SetWordWrap then bTitle:SetWordWrap(false) end
@@ -1437,9 +1437,11 @@ _G.AscensionInspector_MatchFrames = function(pat)
 end
 
 -- v4.2: top-right button (left of the close cross)
+-- v6.9 (user): top-right cluster right-to-left = Auto-Roll, Rapid Roll,
+-- Skill Cards (Auto-Roll pinned nearest the close cross)
 local pushBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
 pushBtn:SetWidth(110) pushBtn:SetHeight(20)
-pushBtn:SetPoint("TOPRIGHT", -30, -5)
+pushBtn:SetPoint("TOPRIGHT", -134, -5)
 pushBtn:SetText("-> Rapid Roll")
 -- v6.3 (user's trick): the client only re-sorts its Desired/Known lists
 -- when a filter changes -- so after the push, the "Abilities" filter is
@@ -1499,7 +1501,7 @@ end)
 -- duplicate, starters = level 1 spells)
 local cardBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
 cardBtn:SetWidth(110) cardBtn:SetHeight(20)
-cardBtn:SetPoint("TOPRIGHT", -144, -5)
+cardBtn:SetPoint("TOPRIGHT", -248, -5)
 cardBtn:SetText("-> Skill Cards")
 cardBtn:SetScript("OnClick", function()
     local rec = selTarget and DB().targets[selTarget]
@@ -2400,9 +2402,11 @@ gearBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 -- the build link, open its window, paste it, trigger its Analyze (same link
 -- format: 1.s10w60.<path>~<spells>~<talents>). We do NOT start rolling --
 -- AutoRoll requires the user's explicit Start (its own safety rule).
+-- v6.9 (user): top-right, right of Rapid Roll (created late so BuildLink /
+-- ioIncl are real upvalues); disabled/greyed when AscensionAutoRoll is absent
 local arBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
-arBtn:SetWidth(96) arBtn:SetHeight(18)
-arBtn:SetPoint("BOTTOMLEFT", 736, 6)
+arBtn:SetWidth(100) arBtn:SetHeight(20)
+arBtn:SetPoint("TOPRIGHT", -30, -5)
 arBtn:SetText("-> Auto-Roll")
 arBtn:SetScript("OnClick", function()
     local AR = _G.AscensionAutoRoll
@@ -2671,7 +2675,99 @@ end)
 local mmToggleL = bui:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 mmToggleL:SetPoint("RIGHT", mmToggle, "LEFT", 2, 0)
 mmToggleL:SetText("minimap button")
-bui:HookScript("OnShow", function() mmToggle:SetChecked(MinimapWanted()) end)
+
+-- v6.9 (user): "Accelerated Roll" toggle above the minimap one -- skips the
+-- Wildcard dice reveal animation (moved here from sad0-QoL). The client
+-- re-sets each animation's duration right before playing, so we WRAP
+-- SetDuration on every dice animation (except the resting Hover) to force 0
+-- while the toggle is on; the wrapper is transparent when off.
+local function FastRollOn() return DB().fastRoll and true or false end
+local diceOrig = {}
+local function DiceWalk(o, fn, depth)
+    if depth > 5 then return end
+    pcall(function()
+        for k, v in pairs(o) do
+            if type(k) == "string" and type(v) == "table" and v.GetObjectType then
+                local okv, vt = pcall(v.GetObjectType, v)
+                if okv and vt == "AnimationGroup" then fn(k, v) end
+            end
+        end
+    end)
+    pcall(function()
+        if o.GetChildren then
+            for _, c in ipairs({ o:GetChildren() }) do DiceWalk(c, fn, depth + 1) end
+        end
+    end)
+end
+local function ApplyFastRoll(fast)
+    local d = _G.WildCardDice
+    if not d then return end
+    DiceWalk(d, function(key, group)
+        if key == "Hover" then return end
+        if not group.GetAnimations then return end
+        local ok, list = pcall(function() return { group:GetAnimations() } end)
+        if not ok then return end
+        for _, a in ipairs(list) do
+            if diceOrig[a] == nil then
+                local okd, dur = pcall(a.GetDuration, a)
+                diceOrig[a] = (okd and dur) or false
+            end
+            if not a.__spyWrapped and type(a.SetDuration) == "function" then
+                local orig = a.SetDuration
+                a.__spyWrapped = true
+                a.SetDuration = function(self, dur)
+                    return orig(self, FastRollOn() and 0 or dur)
+                end
+            end
+            pcall(a.SetDuration, a, fast and 0 or (diceOrig[a] or 0))
+            if fast then pcall(a.SetStartDelay, a, 0) end
+        end
+    end, 0)
+end
+local fastToggle = CreateFrame("CheckButton", nil, bui, "UICheckButtonTemplate")
+fastToggle:SetWidth(20) fastToggle:SetHeight(20)
+fastToggle:SetPoint("BOTTOMRIGHT", mmToggle, "TOPRIGHT", 0, 2)
+fastToggle:SetScript("OnClick", function(self)
+    DB().fastRoll = self:GetChecked() and true or false
+    ApplyFastRoll(DB().fastRoll)
+end)
+fastToggle:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:SetText("Accelerated Roll", 1, 1, 1)
+    GameTooltip:AddLine("Skips the Wildcard dice reveal animation when you\nclick to reveal a spell -- the result appears instantly\n(the idle dice wobble is kept). Off by default.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end)
+fastToggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
+local fastToggleL = bui:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+fastToggleL:SetPoint("RIGHT", fastToggle, "LEFT", 2, 0)
+fastToggleL:SetText("Accelerated Roll")
+-- apply at boot (poll: WildCardDice is created after login) + on every reveal
+local frBoot = CreateFrame("Frame")
+frBoot.acc, frBoot.hooked, frBoot.left = 0, false, 30
+frBoot:SetScript("OnUpdate", function(self, e)
+    self.acc = self.acc + e
+    if self.acc < 1 then return end
+    self.acc = 0 self.left = self.left - 1
+    if _G.WildCardDice then
+        if not self.hooked and _G.WildCardDice.HookScript then
+            self.hooked = true
+            _G.WildCardDice:HookScript("OnShow", function()
+                if FastRollOn() then ApplyFastRoll(true) end
+            end)
+        end
+        ApplyFastRoll(FastRollOn())
+        self:SetScript("OnUpdate", nil)
+    elseif self.left <= 0 then
+        self:SetScript("OnUpdate", nil)
+    end
+end)
+
+bui:HookScript("OnShow", function()
+    mmToggle:SetChecked(MinimapWanted())
+    fastToggle:SetChecked(FastRollOn())
+    -- v6.9: grey the Auto-Roll button when AscensionAutoRoll isn't loaded
+    if _G.AscensionAutoRoll then arBtn:Enable() else arBtn:Disable() end
+end)
 
 local function MakeMinimapButton()
     local btn = CreateFrame("Button", "BuildSpyMinimapButton", Minimap)
