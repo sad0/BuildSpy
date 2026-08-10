@@ -51,6 +51,20 @@ Import accepts **three formats**: a BuildSpy text export, an
 `ascension.nie.one` link, or the site's comma-separated spell-id list — any
 of them lands as a build in your list.
 
+### Import from the Darkmoon Logs armory
+
+WoW 3.3.5 addons can't fetch web pages, so BuildSpy can't read an armory URL
+from inside the game. A small **browser bookmarklet** bridges the gap: open a
+character's page on `darkmoon.ascensionlogs.gg/armory/NAME`, click the
+bookmarklet, and it copies a BuildSpy text export to your clipboard — paste it
+into **Import**.
+
+Setup (once): create a new browser bookmark and paste the contents of
+[`tools/armory-bookmarklet.txt`](tools/armory-bookmarklet.txt) as its URL.
+Then, on any armory page, click the bookmark → switch to the game → **Import**
+→ Ctrl+V → Import. The build (spells, talents, path and gear) appears under
+that character's name. Readable source: [`tools/armory-bookmarklet.js`](tools/armory-bookmarklet.js).
+
 ![Export dialog](screenshots/export-dialog.png)
 
 ## Reproduce builds
