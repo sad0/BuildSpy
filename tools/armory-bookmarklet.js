@@ -43,49 +43,33 @@
         var ci = j.ci_resolved || {};
         var sp = ci.specialization || {};
 
-        var pathMap = {
-            strength: "Path of Strength", agility: "Path of Agility",
-            intellect: "Path of Intelligence", spirit: "Path of Healing",
-            healing: "Path of Healing", duality: "Path of Duality"
-        };
+        // SINGLE-LINE format: BuildSpy's Import stores CA entry ids directly
+        // (unambiguous). Multi-line text gets its newlines stripped when
+        // pasted into the WoW edit box, so everything is on one line:
+        //   BSPY1~<name>~<pathToken>~<entryId,...>~<slot.item.ench,...>
         var token = (ci.primary_stat && ci.primary_stat.token) || "";
-        var pathName = pathMap[token] || null;
-
         var trees = (sp.talents && sp.talents.trees) || {};
-        var abilities = [], talents = [];
+        var entryIds = [];
         Object.keys(trees).forEach(function (slug) {
             (trees[slug].talents || []).forEach(function (n) {
-                if (!n.name) return;
-                (slug === "talents" ? talents : abilities).push(n.name);
+                if (n.entry_id) entryIds.push(n.entry_id);
             });
         });
 
-        var out = [];
-        var player = (ci.player && ci.player.name) || name;
-        var date = new Date().toISOString().slice(0, 16).replace("T", " ");
-        out.push("[BuildSpy] " + player + ", spec 1, armory, " + date);
-        if (pathName) out.push(pathName);
-        out.push("==Spells==");
-        abilities.forEach(function (x) { out.push(x); });
-        out.push("==Talents==");
-        talents.forEach(function (x) { out.push(x); });
-
+        var player = ((ci.player && ci.player.name) || name).replace(/~/g, "");
         var gear = ci.gear || {};
         var slots = Object.keys(gear).map(Number).sort(function (a, b) { return a - b; });
-        if (slots.length) {
-            out.push("==Gear==");
-            slots.forEach(function (s) {
-                var g = gear[s];
-                var id = g.item_id, ench = g.enchant || 0;
-                var nm = (g.resolved_item && g.resolved_item.name) || "";
-                if (id) out.push("s" + s + " " + id + ":" + ench + (nm ? "  " + nm : ""));
-            });
-        }
+        var gearParts = [];
+        slots.forEach(function (s) {
+            var g = gear[s];
+            if (g.item_id) gearParts.push(s + "." + g.item_id + "." + (g.enchant || 0));
+        });
 
-        var text = out.join("\n");
+        var text = "BSPY1~" + player + "~" + token + "~"
+            + entryIds.join(",") + "~" + gearParts.join(",");
         var done = function () {
-            alert("BuildSpy: copied " + player + " (" + abilities.length
-                + " spells, " + talents.length + " talents). Paste into BuildSpy Import.");
+            alert("BuildSpy: copied " + player + " (" + entryIds.length
+                + " entries). Paste into BuildSpy Import.");
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(done, function () { window.prompt("Copy the build:", text); });

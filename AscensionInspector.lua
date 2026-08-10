@@ -2021,8 +2021,76 @@ local function StoreImportedBuild(ids, srcLabel)
     if BuildsChanged then BuildsChanged() else RefreshAll() end
 end
 
+-- v6.14 (user): SINGLE-LINE armory format (multi-line paste into WoW strips
+-- the newlines, mangling the text export). Produced by the armory bookmarklet:
+--   BSPY1~<name>~<pathToken>~<caEntryId,...>~<slot.item.ench,...>
+-- CA ENTRY ids are unambiguous (GetEntryByInternalID) -- no name/spell-id
+-- guessing. token -> the Path's CA entry via PATH_ENTRIES.
+local PATH_BY_TOKEN = {
+    strength = 1149, agility = 1150, intellect = 1151,
+    spirit = 1152, healing = 1152, duality = 18149,
+}
+local function StoreArmoryBuild(name, pathToken, entryIds, gearStr)
+    local CA = _G.C_CharacterAdvancement
+    local hits, unresolved = {}, 0
+    for _, eid in ipairs(entryIds) do
+        local nm
+        if CA and CA.GetEntryByInternalID then
+            local ok, e = pcall(CA.GetEntryByInternalID, eid)
+            if ok and type(e) == "table" then nm = e.Name end
+        end
+        hits[#hits + 1] = { id = eid, rank = 1, name = nm }
+    end
+    -- the Path (mastery) appended as a hit + recorded for the title/list icon
+    local pathCa = pathToken and PATH_BY_TOKEN[string.lower(pathToken)] or nil
+    local pathName
+    if pathCa then
+        for _, p in ipairs(PATH_ENTRIES) do if p.ca == pathCa then pathName = p.name break end end
+        hits[#hits + 1] = { id = pathCa, rank = 1, name = pathName }
+    end
+    if #hits == 0 then Msg("import: no entry resolved (armory).") return end
+    name = (name ~= "" and name) or "Imported"
+    local rec = DB().targets[name] or {}
+    DB().targets[name] = rec
+    rec.at = date("%Y-%m-%d %H:%M")
+    rec.caSpecs = rec.caSpecs or {}
+    local slot = 1
+    while rec.caSpecs[slot] do slot = slot + 1 end
+    rec.caSpecs[slot] = hits
+    if pathName then rec.pathBySpec = rec.pathBySpec or {}; rec.pathBySpec[slot] = pathName end
+    -- gear : "slot.item.ench,slot.item.ench,..."
+    local gear, gn = {}, 0
+    for s, id, ench in string.gmatch(gearStr or "", "(%d+)%.(%d+)%.(%-?%d+)") do
+        gear[tonumber(s)] = "item:" .. id .. ":" .. ench .. ":0:0:0:0:0:0"
+        gn = gn + 1
+    end
+    if gn > 0 then
+        rec.gearBySpec = rec.gearBySpec or {}
+        rec.gearBySpec[slot] = rec.gearBySpec[slot] or {}
+        rec.gearBySpec[slot].items = gear
+        rec.gearBySpec[slot].at = rec.at
+        rec.gearBySpec[slot].statOrder = GearStatOrder(gear) or rec.gearBySpec[slot].statOrder
+        rec.gearBySpec[slot].weapons = GearWeaponTypes(gear) or rec.gearBySpec[slot].weapons
+    end
+    Msg("import (armory): |cff40ff40" .. #hits .. " entries|r"
+        .. (gn > 0 and (" + " .. gn .. " items") or "") .. " -> " .. name .. " spec " .. slot)
+    selTarget, selSlot = name, slot
+    PrepareRows() SortRows()
+    if BuildsChanged then BuildsChanged() else RefreshAll() end
+end
+
 local function ImportText(txt)
     txt = txt or ""
+    -- v6.14: armory single-line format FIRST (it also uses "~")
+    -- BSPY1~<name>~<pathToken>~<entryId,...>~<gear>
+    local aName, aPath, aEntries, aGear = string.match(txt,
+        "^%s*BSPY1~([^~]*)~([^~]*)~([^~]*)~?(.*)$")
+    if aEntries then
+        local ids = {}
+        for d in string.gmatch(aEntries, "%d+") do ids[#ids + 1] = tonumber(d) end
+        StoreArmoryBuild(aName, aPath, ids, aGear)
+        return
+    end
     -- v6.5: dispatch by FORMAT before the text parser
     -- 1) ascension.nie.one link (has "~" groups, or the site url/prefix)
     local body = string.match(txt, "#b=(.+)") or txt
@@ -2178,7 +2246,7 @@ ioScroll:SetScrollChild(ioEdit)
 local ioHint = ioFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 ioHint:SetPoint("BOTTOMLEFT", 14, 26)
 -- v6.5 (user): state what Import accepts
-ioHint:SetText("Export: Ctrl+C.  Import (then ->) accepts: a BuildSpy text export,\nan ascension.nie.one link, or the site's comma-separated spell-id list.")
+ioHint:SetText("Export: Ctrl+C.  Import (then ->) accepts: a BuildSpy text export, an\nascension.nie.one link, a spell-id list, or a Darkmoon Logs armory export.")
 local ioGo = CreateFrame("Button", nil, ioFrame, "UIPanelButtonTemplate")
 ioGo:SetWidth(90) ioGo:SetHeight(20)
 ioGo:SetPoint("BOTTOMRIGHT", -10, 8)
@@ -2699,145 +2767,9 @@ local function DiceWalk(o, fn, depth)
         end
     end)
 end
--- v6.10 (user): SPY on the card-pack reveal animations (SkillCardsFrame ->
--- "Card Packs and Cards" tab). Same proven playbook as the dice spy: wrap
--- Play/Stop of every AnimationGroup and SetDuration/Play of their animations
--- under SkillCardsFrame, log unique calls, so we see what plays during a pack
--- reveal and whether the client re-sets durations. Toggle via /ains packspy;
--- structure via /ains packdump. Exposed as globals (defined after the slash
--- handler in file order).
-local packSpy = { active = false, log = {}, seen = {}, orig = {} }
-local function FindFrame(name)
-    if type(_G[name]) == "table" then return _G[name] end
-    if EnumerateFrames then
-        local f = EnumerateFrames()
-        while f do
-            local ok, n = pcall(function() return f.GetName and f:GetName() end)
-            if ok and n == name then return f end
-            f = EnumerateFrames(f)
-        end
-    end
-end
-_G.BuildSpy_PackSpy = function()
-    AscensionInspectorDB = AscensionInspectorDB or {}
-    local root = FindFrame("SkillCardsFrame")
-    if not root then Msg("SkillCardsFrame not found (open the Skill Cards window).") return end
-    if not packSpy.active then
-        packSpy.log, packSpy.seen, packSpy.orig = {}, {}, {}
-        local n, gi = 0, 0
-        local function wrap(obj, method, label)
-            local f = obj[method]
-            if type(f) ~= "function" then return end
-            packSpy.orig[#packSpy.orig + 1] = { o = obj, m = method, f = f }
-            obj[method] = function(self, ...)
-                local args = {}
-                for i = 1, select("#", ...) do args[#args + 1] = tostring((select(i, ...))) end
-                local line = label .. ":" .. method .. "(" .. table.concat(args, ",") .. ")"
-                if not packSpy.seen[line] and #packSpy.log < 500 then
-                    packSpy.seen[line] = true
-                    packSpy.log[#packSpy.log + 1] = line
-                end
-                return f(self, ...)
-            end
-            n = n + 1
-        end
-        DiceWalk(root, function(key, group)
-            gi = gi + 1
-            local gl = "grp[" .. gi .. "]" .. key
-            wrap(group, "Play", gl)
-            wrap(group, "Stop", gl)
-            wrap(group, "Finish", gl)
-            if group.GetAnimations then
-                local ok, list = pcall(function() return { group:GetAnimations() } end)
-                if ok then
-                    for ai, a in ipairs(list) do
-                        wrap(a, "SetDuration", gl .. ".a" .. ai)
-                        wrap(a, "Play", gl .. ".a" .. ai)
-                    end
-                end
-            end
-        end, 0)
-        packSpy.active = true
-        Msg("PACK SPY on (" .. n .. " methods, " .. gi .. " anim groups) -- open a card pack (reveal), then /ains packspy to stop.")
-    else
-        for _, o in ipairs(packSpy.orig) do pcall(function() o.o[o.m] = o.f end) end
-        packSpy.orig, packSpy.active = {}, false
-        AscensionInspectorDB.packspy = { at = date("%Y-%m-%d %H:%M"), calls = packSpy.log }
-        Msg(#packSpy.log .. " calls captured -- /reload to write.")
-    end
-end
-_G.BuildSpy_PackDump = function()
-    AscensionInspectorDB = AscensionInspectorDB or {}
-    local root = FindFrame("SkillCardsFrame")
-    if not root then Msg("SkillCardsFrame not found.") return end
-    local out = {}
-    local function node(o, prefix, depth)
-        if depth > 5 or #out > 1500 then return end
-        local ot, nm = "?", "?"
-        pcall(function() ot = o.GetObjectType and o:GetObjectType() or "?" end)
-        pcall(function() nm = o.GetName and o:GetName() or "anon" end)
-        local fl = {}
-        pcall(function() if o.IsShown then fl[#fl + 1] = o:IsShown() and "shown" or "hidden" end end)
-        pcall(function() if o.IsPlaying then fl[#fl + 1] = o:IsPlaying() and "PLAYING" or "stopped" end end)
-        pcall(function() if o.GetDuration then fl[#fl + 1] = "dur=" .. tostring(o:GetDuration()) end end)
-        out[#out + 1] = prefix .. ot .. " " .. nm .. " [" .. table.concat(fl, " ") .. "]"
-        pcall(function()
-            for k, v in pairs(o) do
-                if type(k) == "string" and type(v) == "table" and v.GetObjectType then
-                    local okv, vt = pcall(v.GetObjectType, v)
-                    if okv and (vt == "AnimationGroup" or vt == "Animation") then
-                        out[#out + 1] = prefix .. "  ." .. k .. " = " .. vt
-                        node(v, prefix .. "      ", depth + 1)
-                    end
-                end
-            end
-        end)
-        pcall(function() if ot == "AnimationGroup" and o.GetAnimations then
-            for _, a in ipairs({ o:GetAnimations() }) do node(a, prefix .. "    ", depth + 1) end
-        end end)
-        pcall(function() if o.GetChildren then
-            for _, c in ipairs({ o:GetChildren() }) do node(c, prefix .. "    ", depth + 1) end
-        end end)
-    end
-    node(root, "", 0)
-    -- v6.12: GLOBAL sweep -- every live frame that currently has a PLAYING
-    -- AnimationGroup, wherever it lives (the 5-card reveal may sit outside
-    -- SkillCardsFrame). Run this WHILE the reveal is on screen.
-    out[#out + 1] = "===== frames avec une AnimationGroup PLAYING ====="
-    if EnumerateFrames then
-        local f = EnumerateFrames()
-        local seen = 0
-        while f and seen < 4000 do
-            seen = seen + 1
-            pcall(function()
-                local playing = false
-                for k, v in pairs(f) do
-                    if type(v) == "table" and v.GetObjectType then
-                        local okv, vt = pcall(v.GetObjectType, v)
-                        if okv and vt == "AnimationGroup" then
-                            local okp, p = pcall(v.IsPlaying, v)
-                            if okp and p then playing = true break end
-                        end
-                    end
-                end
-                if playing then
-                    local nm = (f.GetName and f:GetName()) or "anon"
-                    local sh = (f.IsShown and f:IsShown()) and "shown" or "hidden"
-                    out[#out + 1] = "PLAYING: " .. nm .. " [" .. sh .. "]"
-                end
-            end)
-            f = EnumerateFrames(f)
-        end
-    end
-    AscensionInspectorDB.packdump = { at = date("%Y-%m-%d %H:%M"), lines = out }
-    Msg("packdump " .. #out .. " lines -- /reload to write (run it DURING the 5-card reveal).")
-end
-
--- v6.10 : generic fast-reveal -- wrap SetDuration on every animation of a
--- frame tree (the client re-sets durations right before Play, so a permanent
--- wrapper is the only reliable lever) ; forces 0 while the toggle is on,
--- transparent when off. Reused for the dice AND the Skill Card packs (whose
--- card frames are POOLED / created per reveal -> re-walked periodically).
+-- fast dice reveal -- wrap SetDuration on every animation of the dice frame
+-- (the client re-sets durations right before Play, so a permanent wrapper is
+-- the only reliable lever) ; forces 0 while the toggle is on, transparent off.
 local function FastWrapAnim(a)
     if diceOrig[a] == nil then
         local okd, dur = pcall(a.GetDuration, a)
@@ -2864,7 +2796,6 @@ local function FastWrapTree(root, skipKey)
 end
 local function ApplyFastRoll()
     FastWrapTree(_G.WildCardDice, "Hover")        -- dice (keep the idle Hover)
-    FastWrapTree(_G.SkillCardsFrame, nil)         -- card packs (all anims)
 end
 local fastToggle = CreateFrame("CheckButton", nil, bui, "UICheckButtonTemplate")
 fastToggle:SetWidth(20) fastToggle:SetHeight(20)
@@ -2876,7 +2807,7 @@ end)
 fastToggle:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetText("Accelerated Roll", 1, 1, 1)
-    GameTooltip:AddLine("Skips the reveal animations of the Wildcard dice\n(clicking to reveal a spell) AND of Skill Card packs --\nresults appear instantly. The idle dice wobble is kept.\nOff by default.", 0.8, 0.8, 0.8, true)
+    GameTooltip:AddLine("Skips the Wildcard dice reveal animation when you\nclick to reveal a spell -- the result appears instantly\n(the idle dice wobble is kept). Off by default.", 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end)
 fastToggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2897,46 +2828,11 @@ frBoot:SetScript("OnUpdate", function(self, e)
         self.diceHook = true
         _G.WildCardDice:HookScript("OnShow", function() if FastRollOn() then ApplyFastRoll() end end)
     end
-    if _G.SkillCardsFrame and not self.cardHook and _G.SkillCardsFrame.HookScript then
-        self.cardHook = true
-        _G.SkillCardsFrame:HookScript("OnShow", function() if FastRollOn() then ApplyFastRoll() end end)
-    end
     ApplyFastRoll()
-    if (self.diceHook and self.cardHook) or self.left <= 0 then
+    if self.diceHook or self.left <= 0 then
         self:SetScript("OnUpdate", nil)
     end
 end)
--- v6.12 (packdump) : le reveal des 5 cartes vit dans SkillCardsFrame.Unlock
--- Frame(PoolFrameSkillCardUnlockTemplateN) -- frames POOLÃ‰ES qui n'existent
--- qu'Ã  l'ouverture d'un pack, d'oÃ¹ le tick lent qui les ratait. Le tick passe
--- Ã  0,1 s ET on hooke le bouton "Next" (MassRevealNextButton) + l'apparition
--- de l'UnlockFrame pour envelopper les cartes AU MOMENT du reveal.
-local cardTick = CreateFrame("Frame")
-cardTick.acc, cardTick.nextHook, cardTick.unlockHook = 0, false, false
-cardTick:SetScript("OnUpdate", function(self, e)
-    self.acc = self.acc + e
-    if self.acc < 0.1 then return end
-    self.acc = 0
-    if not (FastRollOn() and _G.SkillCardsFrame and _G.SkillCardsFrame:IsShown()) then return end
-    FastWrapTree(_G.SkillCardsFrame, nil)
-    -- hook one-shot du reveal (le bouton Next + l'UnlockFrame)
-    local nb = _G.SkillCardsFrameUnlockFrameMassRevealNextButton
-        or (_G.SkillCardsFrame.UnlockFrame and _G.SkillCardsFrame.UnlockFrame.MassRevealNextButton)
-    if nb and not self.nextHook and nb.HookScript then
-        self.nextHook = true
-        nb:HookScript("OnClick", function()
-            if FastRollOn() then FastWrapTree(_G.SkillCardsFrame, nil) end
-        end)
-    end
-    local uf = _G.SkillCardsFrame.UnlockFrame
-    if uf and not self.unlockHook and uf.HookScript then
-        self.unlockHook = true
-        uf:HookScript("OnShow", function()
-            if FastRollOn() then FastWrapTree(_G.SkillCardsFrame, nil) end
-        end)
-    end
-end)
-
 bui:HookScript("OnShow", function()
     mmToggle:SetChecked(MinimapWanted())
     fastToggle:SetChecked(FastRollOn())
