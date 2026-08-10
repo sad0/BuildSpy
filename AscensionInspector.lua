@@ -751,7 +751,8 @@ local bui = CreateFrame("Frame", "AscensionInspectorBuilds", UIParent)
 -- v5.3 (user): taller bottom margin (+18) -- the bottom buttons were
 -- blending into the table's last row
 -- v6.1 (user): wider window -- the builds list gets real aligned columns
-bui:SetWidth(880) bui:SetHeight(30 + 26 + TAB_ROWS * ENTRY_H + 34)
+-- v6.6 (user): +24 tall for the "selected build's" group (Name + Comment)
+bui:SetWidth(880) bui:SetHeight(30 + 26 + TAB_ROWS * ENTRY_H + 58)
 bui:SetPoint("CENTER", 0, 20)
 bui:SetFrameStrata("HIGH")
 bui:SetMovable(true) bui:EnableMouse(true)
@@ -1710,6 +1711,9 @@ RefreshAll = function()
         local rec = selTarget and DB().targets[selTarget]
         cb:SetText((rec and rec.comments and rec.comments[selSlot]) or "")
     end
+    -- v6.6: reload the selected build's name into the rename editbox
+    local nb = _G.AscensionInspectorName
+    if nb and not nb:HasFocus() then nb:SetText(selTarget or "") end
 end
 
 listPane:SetScript("OnMouseWheel", function(_, delta)
@@ -1729,15 +1733,63 @@ bui:SetScript("OnShow", function()
     if selTarget then PrepareRows() SortRows() end
     RefreshAll()
 end)
--- v3.5: per-build COMMENT (user request, Wildcard realm) -- editbox under
--- the list, Enter = saved into rec.comments[slot]; shown in the list and by
--- the "used by" banner on reroll.
+-- v3.5 / v6.6 : "selected build's" group -- Name (rename) + Comment editboxes
+-- under the list, each Enter = save. Comment -> rec.comments[slot]. Rename
+-- MOVES this build's slot (and its per-slot data) to the new target name.
+local grpLbl = bui:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+grpLbl:SetPoint("BOTTOMLEFT", 14, 52)
+grpLbl:SetText("selected build's  |cff888888(Enter = save)|r")
+
+local nameLbl = bui:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+nameLbl:SetPoint("BOTTOMLEFT", 16, 32)
+nameLbl:SetText("Name")
+local nameBox = CreateFrame("EditBox", "AscensionInspectorName", bui, "InputBoxTemplate")
+nameBox:SetWidth(226) nameBox:SetHeight(18)
+nameBox:SetPoint("BOTTOMLEFT", 84, 30)
+nameBox:SetAutoFocus(false)
+nameBox:SetScript("OnEnterPressed", function(self)
+    if not selTarget then Msg("select a build first.") self:ClearFocus() return end
+    local newName = string.gsub(self:GetText() or "", "^%s*(.-)%s*$", "%1")
+    if newName == "" or newName == selTarget then self:ClearFocus() return end
+    local old = DB().targets[selTarget]
+    if not (old and old.caSpecs and old.caSpecs[selSlot]) then self:ClearFocus() return end
+    -- move this slot (+ its per-slot data) to the new target name
+    local rec2 = DB().targets[newName]
+    local fresh = rec2 == nil
+    rec2 = rec2 or {}
+    DB().targets[newName] = rec2
+    if fresh then
+        rec2.at, rec2.level, rec2.class = old.at, old.level, old.class
+        rec2.activeSpec = old.activeSpec
+    end
+    rec2.caSpecs = rec2.caSpecs or {}
+    local ns = selSlot
+    if rec2.caSpecs[ns] then ns = 1 while rec2.caSpecs[ns] do ns = ns + 1 end end
+    rec2.caSpecs[ns] = old.caSpecs[selSlot]
+    old.caSpecs[selSlot] = nil
+    local function moveSub(field)
+        if old[field] and old[field][selSlot] ~= nil then
+            rec2[field] = rec2[field] or {}
+            rec2[field][ns] = old[field][selSlot]
+            old[field][selSlot] = nil
+            if not next(old[field]) then old[field] = nil end
+        end
+    end
+    moveSub("comments") moveSub("pathBySpec") moveSub("ignored") moveSub("gearBySpec")
+    if not next(old.caSpecs) then DB().targets[selTarget] = nil end
+    Msg("renamed to |cffffd100" .. newName .. " spec " .. ns .. "|r.")
+    self:ClearFocus()
+    selTarget, selSlot = newName, ns   -- new pathCache key computed lazily
+    PrepareRows() SortRows() RefreshAll()
+end)
+nameBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
 local cmLbl = bui:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-cmLbl:SetPoint("BOTTOMLEFT", 14, 30)
-cmLbl:SetText("selected build's comment (Enter = save):")
+cmLbl:SetPoint("BOTTOMLEFT", 16, 10)
+cmLbl:SetText("Comment")
 local cmBox = CreateFrame("EditBox", "AscensionInspectorComment", bui, "InputBoxTemplate")
-cmBox:SetWidth(286) cmBox:SetHeight(18)
-cmBox:SetPoint("BOTTOMLEFT", 18, 8)
+cmBox:SetWidth(226) cmBox:SetHeight(18)
+cmBox:SetPoint("BOTTOMLEFT", 84, 8)
 cmBox:SetAutoFocus(false)
 cmBox:SetScript("OnEnterPressed", function(self)
     if not selTarget then Msg("select a build first.") self:ClearFocus() return end
