@@ -47,6 +47,10 @@ A toggle chooses whether ignored entries ship too.
 **Link** copies a shareable `ascension.nie.one` build link (base-36 spell
 ids) — paste it in guild chat or a browser and the build opens on the site.
 
+Import accepts **three formats**: a BuildSpy text export, an
+`ascension.nie.one` link, or the site's comma-separated spell-id list — any
+of them lands as a build in your list.
+
 ![Export dialog](screenshots/export-dialog.png)
 
 ## Reproduce builds

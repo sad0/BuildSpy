@@ -1905,9 +1905,100 @@ local function ImportNameMap()
     return importNameMap
 end
 
+-- v6.5 (user): import ALSO accepts an ascension.nie.one LINK or the site's
+-- comma-separated SPELL-ID list. Both decode to spell ids -> SpellIndex
+-- resolves each to its CA entry (all ranks covered), stored as a build under
+-- a synthetic "Imported" name. base-36 decoder (mirror of Base36).
+local function From36(s)
+    local n = 0
+    s = string.lower(s or "")
+    if s == "" then return nil end
+    for i = 1, #s do
+        local c = string.byte(s, i)
+        local v
+        if c >= 48 and c <= 57 then v = c - 48
+        elseif c >= 97 and c <= 122 then v = c - 87
+        else return nil end
+        n = n * 36 + v
+    end
+    return n
+end
+local function StoreImportedBuild(ids, srcLabel)
+    local CA = _G.C_CharacterAdvancement
+    local si = SpellIndex()
+    local hits, unresolved = {}, 0
+    for _, sid in ipairs(ids) do
+        local caId, name
+        local fam = si and si[sid]
+        if fam then caId, name = fam.id, fam.name end
+        if not caId and CA and CA.GetEntryBySpellID then
+            local ok, e = pcall(CA.GetEntryBySpellID, sid)
+            if ok and type(e) == "table" then
+                caId = e.ID or e.Id or e.id or e.entryID or e.EntryID or e.internalID
+                name = e.Name
+            end
+        end
+        if caId then hits[#hits + 1] = { id = caId, rank = 1, name = name }
+        else unresolved = unresolved + 1 end
+    end
+    if #hits == 0 then
+        Msg("import: no spell id resolved (" .. srcLabel .. ").")
+        return
+    end
+    -- store under "Imported", smallest free spec slot (never clobber)
+    local rec = DB().targets["Imported"] or {}
+    DB().targets["Imported"] = rec
+    rec.at = date("%Y-%m-%d %H:%M")
+    rec.caSpecs = rec.caSpecs or {}
+    local slot = 1
+    while rec.caSpecs[slot] do slot = slot + 1 end
+    rec.caSpecs[slot] = hits
+    Msg("import (" .. srcLabel .. "): |cff40ff40" .. #hits .. " entries|r -> Imported spec " .. slot
+        .. (unresolved > 0 and ("  |cffff8800" .. unresolved .. " unresolved|r") or ""))
+    selTarget, selSlot = "Imported", slot
+    PrepareRows() SortRows()
+    if BuildsChanged then BuildsChanged() else RefreshAll() end
+end
+
 local function ImportText(txt)
+    txt = txt or ""
+    -- v6.5: dispatch by FORMAT before the text parser
+    -- 1) ascension.nie.one link (has "~" groups, or the site url/prefix)
+    local body = string.match(txt, "#b=(.+)") or txt
+    body = string.gsub(body, "%s", "")
+    if string.find(body, "~", 1, true) and not string.find(txt, "==Spells==", 1, true) then
+        local groups = {}
+        for g in string.gmatch(body .. "~", "(.-)~") do groups[#groups + 1] = g end
+        local ids = {}
+        -- group 1 = "<ver>.<mode>.<path>" : the path is the last dot-token
+        if groups[1] then
+            local toks = {}
+            for t in string.gmatch(groups[1] .. ".", "(.-)%.") do toks[#toks + 1] = t end
+            local pid = From36(toks[#toks])
+            if pid and pid > 0 then ids[#ids + 1] = pid end
+        end
+        for gi = 2, #groups do
+            for t in string.gmatch(groups[gi] .. ".", "(.-)%.") do
+                local v = From36(t)
+                if v and v > 0 then ids[#ids + 1] = v end
+            end
+        end
+        StoreImportedBuild(ids, "nie.one link")
+        return
+    end
+    -- 2) comma-separated decimal spell-id list
+    if string.find(txt, "^[%d%s,]+$") then
+        local ids = {}
+        for d in string.gmatch(txt, "%d+") do
+            local v = tonumber(d)
+            if v and v > 0 then ids[#ids + 1] = v end
+        end
+        StoreImportedBuild(ids, "id list")
+        return
+    end
+    -- 3) BuildSpy text format
     local lines = {}
-    for line in string.gmatch((txt or "") .. "\n", "(.-)\r?\n") do
+    for line in string.gmatch(txt .. "\n", "(.-)\r?\n") do
         line = string.gsub(line, "^%s*(.-)%s*$", "%1")
         if line ~= "" then lines[#lines + 1] = line end
     end
@@ -2015,7 +2106,7 @@ ioTitle:SetPoint("TOP", 0, -9)
 ioTitle:SetText("BuildSpy -- export / import")
 local ioScroll = CreateFrame("ScrollFrame", "BuildSpyIOScroll", ioFrame, "UIPanelScrollFrameTemplate")
 ioScroll:SetPoint("TOPLEFT", 12, -30)
-ioScroll:SetPoint("BOTTOMRIGHT", -32, 40)
+ioScroll:SetPoint("BOTTOMRIGHT", -32, 56)   -- v6.5: room for the 2-line hint
 local ioEdit = CreateFrame("EditBox", nil, ioScroll)
 ioEdit:SetMultiLine(true)
 ioEdit:SetFontObject(ChatFontNormal)
@@ -2025,7 +2116,8 @@ ioEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 ioScroll:SetScrollChild(ioEdit)
 local ioHint = ioFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 ioHint:SetPoint("BOTTOMLEFT", 14, 26)
-ioHint:SetText("Export: Ctrl+C.  Import: paste a build, then ->")
+-- v6.5 (user): state what Import accepts
+ioHint:SetText("Export: Ctrl+C.  Import (then ->) accepts: a BuildSpy text export,\nan ascension.nie.one link, or the site's comma-separated spell-id list.")
 local ioGo = CreateFrame("Button", nil, ioFrame, "UIPanelButtonTemplate")
 ioGo:SetWidth(90) ioGo:SetHeight(20)
 ioGo:SetPoint("BOTTOMRIGHT", -10, 8)
