@@ -2684,7 +2684,7 @@ mmToggleL:SetText("minimap button")
 local function FastRollOn() return DB().fastRoll and true or false end
 local diceOrig = {}
 local function DiceWalk(o, fn, depth)
-    if depth > 5 then return end
+    if depth > 8 then return end   -- v6.12: reveal cards nest deeper
     pcall(function()
         for k, v in pairs(o) do
             if type(k) == "string" and type(v) == "table" and v.GetObjectType then
@@ -2800,8 +2800,37 @@ _G.BuildSpy_PackDump = function()
         end end)
     end
     node(root, "", 0)
+    -- v6.12: GLOBAL sweep -- every live frame that currently has a PLAYING
+    -- AnimationGroup, wherever it lives (the 5-card reveal may sit outside
+    -- SkillCardsFrame). Run this WHILE the reveal is on screen.
+    out[#out + 1] = "===== frames avec une AnimationGroup PLAYING ====="
+    if EnumerateFrames then
+        local f = EnumerateFrames()
+        local seen = 0
+        while f and seen < 4000 do
+            seen = seen + 1
+            pcall(function()
+                local playing = false
+                for k, v in pairs(f) do
+                    if type(v) == "table" and v.GetObjectType then
+                        local okv, vt = pcall(v.GetObjectType, v)
+                        if okv and vt == "AnimationGroup" then
+                            local okp, p = pcall(v.IsPlaying, v)
+                            if okp and p then playing = true break end
+                        end
+                    end
+                end
+                if playing then
+                    local nm = (f.GetName and f:GetName()) or "anon"
+                    local sh = (f.IsShown and f:IsShown()) and "shown" or "hidden"
+                    out[#out + 1] = "PLAYING: " .. nm .. " [" .. sh .. "]"
+                end
+            end)
+            f = EnumerateFrames(f)
+        end
+    end
     AscensionInspectorDB.packdump = { at = date("%Y-%m-%d %H:%M"), lines = out }
-    Msg("packdump " .. #out .. " lines -- /reload to write.")
+    Msg("packdump " .. #out .. " lines -- /reload to write (run it DURING the 5-card reveal).")
 end
 
 -- v6.10 : generic fast-reveal -- wrap SetDuration on every animation of a
@@ -2877,15 +2906,34 @@ frBoot:SetScript("OnUpdate", function(self, e)
         self:SetScript("OnUpdate", nil)
     end
 end)
--- tick : re-parcours Skill Cards quand ouverte + module actif (frames poolees)
+-- v6.12 (packdump) : le reveal des 5 cartes vit dans SkillCardsFrame.Unlock
+-- Frame(PoolFrameSkillCardUnlockTemplateN) -- frames POOLÃ‰ES qui n'existent
+-- qu'Ã  l'ouverture d'un pack, d'oÃ¹ le tick lent qui les ratait. Le tick passe
+-- Ã  0,1 s ET on hooke le bouton "Next" (MassRevealNextButton) + l'apparition
+-- de l'UnlockFrame pour envelopper les cartes AU MOMENT du reveal.
 local cardTick = CreateFrame("Frame")
-cardTick.acc = 0
+cardTick.acc, cardTick.nextHook, cardTick.unlockHook = 0, false, false
 cardTick:SetScript("OnUpdate", function(self, e)
     self.acc = self.acc + e
-    if self.acc < 0.4 then return end
+    if self.acc < 0.1 then return end
     self.acc = 0
-    if FastRollOn() and _G.SkillCardsFrame and _G.SkillCardsFrame:IsShown() then
-        FastWrapTree(_G.SkillCardsFrame, nil)
+    if not (FastRollOn() and _G.SkillCardsFrame and _G.SkillCardsFrame:IsShown()) then return end
+    FastWrapTree(_G.SkillCardsFrame, nil)
+    -- hook one-shot du reveal (le bouton Next + l'UnlockFrame)
+    local nb = _G.SkillCardsFrameUnlockFrameMassRevealNextButton
+        or (_G.SkillCardsFrame.UnlockFrame and _G.SkillCardsFrame.UnlockFrame.MassRevealNextButton)
+    if nb and not self.nextHook and nb.HookScript then
+        self.nextHook = true
+        nb:HookScript("OnClick", function()
+            if FastRollOn() then FastWrapTree(_G.SkillCardsFrame, nil) end
+        end)
+    end
+    local uf = _G.SkillCardsFrame.UnlockFrame
+    if uf and not self.unlockHook and uf.HookScript then
+        self.unlockHook = true
+        uf:HookScript("OnShow", function()
+            if FastRollOn() then FastWrapTree(_G.SkillCardsFrame, nil) end
+        end)
     end
 end)
 

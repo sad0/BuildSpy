@@ -1,25 +1,37 @@
 // BuildSpy -- "Copy build for BuildSpy" bookmarklet for Darkmoon Logs armory.
 //
 // WoW 3.3.5 addons cannot make web requests, so BuildSpy cannot read an armory
-// URL from inside the game. This little script runs in YOUR browser instead:
-// open a character's armory page (https://darkmoon.ascensionlogs.gg/armory/NAME),
-// click the bookmarklet, and it copies a BuildSpy text export to your clipboard.
-// Paste it into BuildSpy's Import (the build appears under that character name).
+// URL from inside the game. This runs in YOUR browser instead. The armory API
+// blocks cross-site requests (CORS), so the bookmarklet must run WHILE you are
+// on darkmoon.ascensionlogs.gg -- but you no longer need each player's page:
+// click it anywhere on the site and it PROMPTS for a player name or URL, then
+// copies a BuildSpy text export to your clipboard. Paste it into BuildSpy's
+// Import (the build appears under that character name).
 //
-// The minified one-line version to save as a bookmark is in armory-bookmarklet.txt.
-// Readable source below; keep the two in sync if you edit.
+// Tip: if your bookmarks bar is hidden while browsing, Ctrl+Shift+B toggles it
+// (Chrome/Edge/Firefox), or open the bookmark from the bookmarks menu.
+//
+// The minified one-line version to save as a bookmark is armory-bookmarklet.txt.
+// Keep the two in sync if you edit.
 
 (async function () {
     try {
-        var origin = "https://darkmoon.ascensionlogs.gg";
-        if (location.host.indexOf("ascensionlogs.gg") === -1) {
-            alert("Open a Darkmoon Logs armory page first (…/armory/NAME).");
+        var host = location.host || "";
+        if (host.indexOf("ascensionlogs.gg") === -1) {
+            if (confirm("BuildSpy: the armory blocks cross-site requests, so this must run on darkmoon.ascensionlogs.gg. Open it now?")) {
+                location.href = "https://darkmoon.ascensionlogs.gg/";
+            }
             return;
         }
-        var name = decodeURIComponent(
+        var origin = location.origin;
+        var current = decodeURIComponent(
             (location.pathname.split("/").filter(Boolean).pop() || "")
         );
-        if (!name) { alert("No character name in the URL."); return; }
+        var input = window.prompt("Player name or armory URL:", current || "");
+        if (!input) return;
+        input = input.trim();
+        var m = input.match(/armory\/([^\/?#]+)/i);
+        var name = m ? decodeURIComponent(m[1]) : input;
 
         var byName = await (await fetch(
             origin + "/api/armory/by-name/" + encodeURIComponent(name)

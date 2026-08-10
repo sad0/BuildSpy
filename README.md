@@ -61,9 +61,18 @@ into **Import**.
 
 Setup (once): create a new browser bookmark and paste the contents of
 [`tools/armory-bookmarklet.txt`](tools/armory-bookmarklet.txt) as its URL.
-Then, on any armory page, click the bookmark → switch to the game → **Import**
-→ Ctrl+V → Import. The build (spells, talents, path and gear) appears under
-that character's name. Readable source: [`tools/armory-bookmarklet.js`](tools/armory-bookmarklet.js).
+
+Use it: on **any** page of `darkmoon.ascensionlogs.gg`, click the bookmark. It
+asks for a **player name or armory URL** — type one and it copies the build to
+your clipboard. Switch to the game → **Import** → Ctrl+V → Import. The build
+(spells, talents, path and gear) appears under that character's name.
+
+Notes:
+- The armory blocks cross-site requests, so the bookmark only works while
+  you're on `darkmoon.ascensionlogs.gg` (any page — the prompt does the rest).
+- If your bookmarks bar is hidden while browsing, **Ctrl+Shift+B** toggles it
+  (Chrome/Edge/Firefox), or open the bookmark from the bookmarks menu.
+- Readable source: [`tools/armory-bookmarklet.js`](tools/armory-bookmarklet.js).
 
 ![Export dialog](screenshots/export-dialog.png)
 
