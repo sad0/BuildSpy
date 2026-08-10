@@ -1980,15 +1980,22 @@ local function StoreImportedBuild(ids, srcLabel)
     local si = SpellIndex()
     local hits, unresolved = {}, 0
     for _, sid in ipairs(ids) do
+        -- v6.7 fix (user: imported DK spells showed lvl 71 / wrong type): a
+        -- spell id can belong to SEVERAL CA entries (shared across classes/
+        -- levels) and SpellIndex kept only the FIRST -- GetEntryBySpellID is
+        -- the game's AUTHORITATIVE resolver (tooltip proves 48266 -> entry
+        -- 41932, level 1) so it goes FIRST, SpellIndex only as fallback
         local caId, name
-        local fam = si and si[sid]
-        if fam then caId, name = fam.id, fam.name end
-        if not caId and CA and CA.GetEntryBySpellID then
+        if CA and CA.GetEntryBySpellID then
             local ok, e = pcall(CA.GetEntryBySpellID, sid)
             if ok and type(e) == "table" then
                 caId = e.ID or e.Id or e.id or e.entryID or e.EntryID or e.internalID
                 name = e.Name
             end
+        end
+        if not caId then
+            local fam = si and si[sid]
+            if fam then caId, name = fam.id, fam.name end
         end
         if caId then hits[#hits + 1] = { id = caId, rank = 1, name = name }
         else unresolved = unresolved + 1 end
