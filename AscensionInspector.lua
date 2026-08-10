@@ -2699,42 +2699,155 @@ local function DiceWalk(o, fn, depth)
         end
     end)
 end
-local function ApplyFastRoll(fast)
-    local d = _G.WildCardDice
-    if not d then return end
-    DiceWalk(d, function(key, group)
-        if key == "Hover" then return end
-        if not group.GetAnimations then return end
-        local ok, list = pcall(function() return { group:GetAnimations() } end)
-        if not ok then return end
-        for _, a in ipairs(list) do
-            if diceOrig[a] == nil then
-                local okd, dur = pcall(a.GetDuration, a)
-                diceOrig[a] = (okd and dur) or false
+-- v6.10 (user): SPY on the card-pack reveal animations (SkillCardsFrame ->
+-- "Card Packs and Cards" tab). Same proven playbook as the dice spy: wrap
+-- Play/Stop of every AnimationGroup and SetDuration/Play of their animations
+-- under SkillCardsFrame, log unique calls, so we see what plays during a pack
+-- reveal and whether the client re-sets durations. Toggle via /ains packspy;
+-- structure via /ains packdump. Exposed as globals (defined after the slash
+-- handler in file order).
+local packSpy = { active = false, log = {}, seen = {}, orig = {} }
+local function FindFrame(name)
+    if type(_G[name]) == "table" then return _G[name] end
+    if EnumerateFrames then
+        local f = EnumerateFrames()
+        while f do
+            local ok, n = pcall(function() return f.GetName and f:GetName() end)
+            if ok and n == name then return f end
+            f = EnumerateFrames(f)
+        end
+    end
+end
+_G.BuildSpy_PackSpy = function()
+    AscensionInspectorDB = AscensionInspectorDB or {}
+    local root = FindFrame("SkillCardsFrame")
+    if not root then Msg("SkillCardsFrame not found (open the Skill Cards window).") return end
+    if not packSpy.active then
+        packSpy.log, packSpy.seen, packSpy.orig = {}, {}, {}
+        local n, gi = 0, 0
+        local function wrap(obj, method, label)
+            local f = obj[method]
+            if type(f) ~= "function" then return end
+            packSpy.orig[#packSpy.orig + 1] = { o = obj, m = method, f = f }
+            obj[method] = function(self, ...)
+                local args = {}
+                for i = 1, select("#", ...) do args[#args + 1] = tostring((select(i, ...))) end
+                local line = label .. ":" .. method .. "(" .. table.concat(args, ",") .. ")"
+                if not packSpy.seen[line] and #packSpy.log < 500 then
+                    packSpy.seen[line] = true
+                    packSpy.log[#packSpy.log + 1] = line
+                end
+                return f(self, ...)
             end
-            if not a.__spyWrapped and type(a.SetDuration) == "function" then
-                local orig = a.SetDuration
-                a.__spyWrapped = true
-                a.SetDuration = function(self, dur)
-                    return orig(self, FastRollOn() and 0 or dur)
+            n = n + 1
+        end
+        DiceWalk(root, function(key, group)
+            gi = gi + 1
+            local gl = "grp[" .. gi .. "]" .. key
+            wrap(group, "Play", gl)
+            wrap(group, "Stop", gl)
+            wrap(group, "Finish", gl)
+            if group.GetAnimations then
+                local ok, list = pcall(function() return { group:GetAnimations() } end)
+                if ok then
+                    for ai, a in ipairs(list) do
+                        wrap(a, "SetDuration", gl .. ".a" .. ai)
+                        wrap(a, "Play", gl .. ".a" .. ai)
+                    end
                 end
             end
-            pcall(a.SetDuration, a, fast and 0 or (diceOrig[a] or 0))
-            if fast then pcall(a.SetStartDelay, a, 0) end
+        end, 0)
+        packSpy.active = true
+        Msg("PACK SPY on (" .. n .. " methods, " .. gi .. " anim groups) -- open a card pack (reveal), then /ains packspy to stop.")
+    else
+        for _, o in ipairs(packSpy.orig) do pcall(function() o.o[o.m] = o.f end) end
+        packSpy.orig, packSpy.active = {}, false
+        AscensionInspectorDB.packspy = { at = date("%Y-%m-%d %H:%M"), calls = packSpy.log }
+        Msg(#packSpy.log .. " calls captured -- /reload to write.")
+    end
+end
+_G.BuildSpy_PackDump = function()
+    AscensionInspectorDB = AscensionInspectorDB or {}
+    local root = FindFrame("SkillCardsFrame")
+    if not root then Msg("SkillCardsFrame not found.") return end
+    local out = {}
+    local function node(o, prefix, depth)
+        if depth > 5 or #out > 1500 then return end
+        local ot, nm = "?", "?"
+        pcall(function() ot = o.GetObjectType and o:GetObjectType() or "?" end)
+        pcall(function() nm = o.GetName and o:GetName() or "anon" end)
+        local fl = {}
+        pcall(function() if o.IsShown then fl[#fl + 1] = o:IsShown() and "shown" or "hidden" end end)
+        pcall(function() if o.IsPlaying then fl[#fl + 1] = o:IsPlaying() and "PLAYING" or "stopped" end end)
+        pcall(function() if o.GetDuration then fl[#fl + 1] = "dur=" .. tostring(o:GetDuration()) end end)
+        out[#out + 1] = prefix .. ot .. " " .. nm .. " [" .. table.concat(fl, " ") .. "]"
+        pcall(function()
+            for k, v in pairs(o) do
+                if type(k) == "string" and type(v) == "table" and v.GetObjectType then
+                    local okv, vt = pcall(v.GetObjectType, v)
+                    if okv and (vt == "AnimationGroup" or vt == "Animation") then
+                        out[#out + 1] = prefix .. "  ." .. k .. " = " .. vt
+                        node(v, prefix .. "      ", depth + 1)
+                    end
+                end
+            end
+        end)
+        pcall(function() if ot == "AnimationGroup" and o.GetAnimations then
+            for _, a in ipairs({ o:GetAnimations() }) do node(a, prefix .. "    ", depth + 1) end
+        end end)
+        pcall(function() if o.GetChildren then
+            for _, c in ipairs({ o:GetChildren() }) do node(c, prefix .. "    ", depth + 1) end
+        end end)
+    end
+    node(root, "", 0)
+    AscensionInspectorDB.packdump = { at = date("%Y-%m-%d %H:%M"), lines = out }
+    Msg("packdump " .. #out .. " lines -- /reload to write.")
+end
+
+-- v6.10 : generic fast-reveal -- wrap SetDuration on every animation of a
+-- frame tree (the client re-sets durations right before Play, so a permanent
+-- wrapper is the only reliable lever) ; forces 0 while the toggle is on,
+-- transparent when off. Reused for the dice AND the Skill Card packs (whose
+-- card frames are POOLED / created per reveal -> re-walked periodically).
+local function FastWrapAnim(a)
+    if diceOrig[a] == nil then
+        local okd, dur = pcall(a.GetDuration, a)
+        diceOrig[a] = (okd and dur) or false
+    end
+    if not a.__fastWrapped and type(a.SetDuration) == "function" then
+        local orig = a.SetDuration
+        a.__fastWrapped = true
+        a.SetDuration = function(self, dur)
+            return orig(self, FastRollOn() and 0 or dur)
         end
+    end
+    pcall(a.SetDuration, a, FastRollOn() and 0 or (diceOrig[a] or 0))
+    if FastRollOn() then pcall(a.SetStartDelay, a, 0) end
+end
+local function FastWrapTree(root, skipKey)
+    if not root then return end
+    DiceWalk(root, function(key, group)
+        if skipKey and key == skipKey then return end
+        if not group.GetAnimations then return end
+        local ok, list = pcall(function() return { group:GetAnimations() } end)
+        if ok then for _, a in ipairs(list) do FastWrapAnim(a) end end
     end, 0)
+end
+local function ApplyFastRoll()
+    FastWrapTree(_G.WildCardDice, "Hover")        -- dice (keep the idle Hover)
+    FastWrapTree(_G.SkillCardsFrame, nil)         -- card packs (all anims)
 end
 local fastToggle = CreateFrame("CheckButton", nil, bui, "UICheckButtonTemplate")
 fastToggle:SetWidth(20) fastToggle:SetHeight(20)
 fastToggle:SetPoint("BOTTOMRIGHT", mmToggle, "TOPRIGHT", 0, 2)
 fastToggle:SetScript("OnClick", function(self)
     DB().fastRoll = self:GetChecked() and true or false
-    ApplyFastRoll(DB().fastRoll)
+    ApplyFastRoll()
 end)
 fastToggle:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetText("Accelerated Roll", 1, 1, 1)
-    GameTooltip:AddLine("Skips the Wildcard dice reveal animation when you\nclick to reveal a spell -- the result appears instantly\n(the idle dice wobble is kept). Off by default.", 0.8, 0.8, 0.8, true)
+    GameTooltip:AddLine("Skips the reveal animations of the Wildcard dice\n(clicking to reveal a spell) AND of Skill Card packs --\nresults appear instantly. The idle dice wobble is kept.\nOff by default.", 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end)
 fastToggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2742,23 +2855,37 @@ local fastToggleL = bui:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall
 fastToggleL:SetPoint("RIGHT", fastToggle, "LEFT", 2, 0)
 fastToggleL:SetText("Accelerated Roll")
 -- apply at boot (poll: WildCardDice is created after login) + on every reveal
+-- boot : hooke OnShow du de ET de la fenetre Skill Cards des qu'ils existent
+-- (nÃ©s aprÃ¨s le login) ; puis un tick leger re-parcourt Skill Cards tant
+-- qu'elle est ouverte (ses cartes de reveal sont POOLÃ‰ES Ã  la volÃ©e).
 local frBoot = CreateFrame("Frame")
-frBoot.acc, frBoot.hooked, frBoot.left = 0, false, 30
+frBoot.acc, frBoot.diceHook, frBoot.cardHook, frBoot.left = 0, false, false, 30
 frBoot:SetScript("OnUpdate", function(self, e)
     self.acc = self.acc + e
     if self.acc < 1 then return end
     self.acc = 0 self.left = self.left - 1
-    if _G.WildCardDice then
-        if not self.hooked and _G.WildCardDice.HookScript then
-            self.hooked = true
-            _G.WildCardDice:HookScript("OnShow", function()
-                if FastRollOn() then ApplyFastRoll(true) end
-            end)
-        end
-        ApplyFastRoll(FastRollOn())
+    if _G.WildCardDice and not self.diceHook and _G.WildCardDice.HookScript then
+        self.diceHook = true
+        _G.WildCardDice:HookScript("OnShow", function() if FastRollOn() then ApplyFastRoll() end end)
+    end
+    if _G.SkillCardsFrame and not self.cardHook and _G.SkillCardsFrame.HookScript then
+        self.cardHook = true
+        _G.SkillCardsFrame:HookScript("OnShow", function() if FastRollOn() then ApplyFastRoll() end end)
+    end
+    ApplyFastRoll()
+    if (self.diceHook and self.cardHook) or self.left <= 0 then
         self:SetScript("OnUpdate", nil)
-    elseif self.left <= 0 then
-        self:SetScript("OnUpdate", nil)
+    end
+end)
+-- tick : re-parcours Skill Cards quand ouverte + module actif (frames poolees)
+local cardTick = CreateFrame("Frame")
+cardTick.acc = 0
+cardTick:SetScript("OnUpdate", function(self, e)
+    self.acc = self.acc + e
+    if self.acc < 0.4 then return end
+    self.acc = 0
+    if FastRollOn() and _G.SkillCardsFrame and _G.SkillCardsFrame:IsShown() then
+        FastWrapTree(_G.SkillCardsFrame, nil)
     end
 end)
 
