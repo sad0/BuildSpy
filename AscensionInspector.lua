@@ -2396,6 +2396,39 @@ gearBtn:SetScript("OnEnter", function(self)
 end)
 gearBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+-- v6.8 (user): one-click hand-off to the AscensionAutoRoll addon -- generate
+-- the build link, open its window, paste it, trigger its Analyze (same link
+-- format: 1.s10w60.<path>~<spells>~<talents>). We do NOT start rolling --
+-- AutoRoll requires the user's explicit Start (its own safety rule).
+local arBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
+arBtn:SetWidth(96) arBtn:SetHeight(18)
+arBtn:SetPoint("BOTTOMLEFT", 736, 6)
+arBtn:SetText("-> Auto-Roll")
+arBtn:SetScript("OnClick", function()
+    local AR = _G.AscensionAutoRoll
+    if not (AR and AR.ui and AR.ui.show) then
+        Msg("AscensionAutoRoll not detected -- install it, or use Link + /autoroll.")
+        return
+    end
+    local url = BuildLink(ioIncl:GetChecked() and true or false)
+    if not url then Msg("select a build on the left first.") return end
+    pcall(function() AR.ui:show() end)
+    local panel = _G.AscensionAutoRollPanel or (AR.ui and AR.ui.panel)
+    if panel and panel.EditBox then
+        pcall(function() panel.EditBox:SetText(url) end)
+        if panel.AnalyzeButton then pcall(function() panel.AnalyzeButton:Click() end) end
+        Msg("build sent to Auto-Roll -- review the plan, then press its |cffffd100Start|r.")
+    else
+        Msg("Auto-Roll window not ready -- paste the Link manually (it's on your clipboard-ready field).")
+    end
+end)
+arBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Send this build to the AscensionAutoRoll addon\n(opens its window, pastes the link, runs Analyze).\nYou still press Start there yourself.", 1, 1, 1, 1, true)
+    GameTooltip:Show()
+end)
+arBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 -- selection changes repaint the gear pane too (shared RefreshAll upvalue --
 -- every closure created earlier sees this reassignment)
 local baseRefreshAll = RefreshAll

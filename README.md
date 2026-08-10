@@ -70,6 +70,12 @@ of them lands as a build in your list.
 Both buttons open the matching client window first, and the addon reminds
 you in chat to double-check the result yourself.
 
+- **→ Auto-Roll** — if you also run the [AscensionAutoRoll] addon, this sends
+  the build straight to it: opens its window, pastes the build link and runs
+  its Analyze. You still press **Start** there yourself.
+
+[AscensionAutoRoll]: https://www.curseforge.com/wow/addons
+
 ## Commands
 
 | Command | Effect |
