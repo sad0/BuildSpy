@@ -1825,6 +1825,65 @@ local function ExportText(includeIgnored)
     return table.concat(out, "\n")
 end
 
+-- v6.4 (user): shareable ascension.nie.one build LINK. Reverse-engineered
+-- from a working link + its id export (round-trip verified on 56 ids):
+--   <prefix> . <path spellID> ~ <spell spellIDs> ~ <talent spellIDs>
+-- every id in BASE 36, dot-separated ; groups split by "~". The prefix
+-- "1.s10w60" = version 1 / season 10 / wildcard 60 (metadata shown by the
+-- site) -- HARDCODED from the sample, adjust here if the season/mode changes.
+local NIE_PREFIX = "1.s10w60"
+local NIE_BASE = "https://ascension.nie.one/#b="
+local function Base36(n)
+    n = math.floor(tonumber(n) or 0)
+    if n <= 0 then return "0" end
+    local d = "0123456789abcdefghijklmnopqrstuvwxyz"
+    local s = ""
+    while n > 0 do
+        local r = n % 36
+        s = string.sub(d, r + 1, r + 1) .. s
+        n = math.floor(n / 36)
+    end
+    return s
+end
+local function BuildLink(includeIgnored)
+    local rec = selTarget and DB().targets[selTarget]
+    local hits = rec and rec.caSpecs and rec.caSpecs[selSlot]
+    if not hits then return nil end
+    local CA = _G.C_CharacterAdvancement
+    local pinfo = PathInfo(selTarget, selSlot)
+    local ign = IgnoredSet(false) or {}
+    -- the Path's spell id from PATH_ENTRIES (rank 1, e.g. 84865)
+    local pathSp
+    if pinfo then
+        for _, p in ipairs(PATH_ENTRIES) do
+            if p.ca == pinfo.hid then pathSp = p.sp break end
+        end
+    end
+    local spells, talents, missing = {}, {}, 0
+    for _, h in ipairs(hits) do
+      if not (pinfo and h.id == pinfo.hid)
+          and (includeIgnored or not ign[h.id]) then
+        local e
+        if CA and CA.GetEntryByInternalID then
+            local ok, r = pcall(CA.GetEntryByInternalID, h.id)
+            if ok and type(r) == "table" then e = r end
+        end
+        -- rank-1 spell id (same one the sample link used for the path)
+        local sid = e and type(e.Spells) == "table" and e.Spells[1] or nil
+        if sid then
+            if e and e.Type == "Talent" then talents[#talents + 1] = Base36(sid)
+            else spells[#spells + 1] = Base36(sid) end
+        else
+            missing = missing + 1
+        end
+      end
+    end
+    local out = NIE_PREFIX .. "." .. (pathSp and Base36(pathSp) or "0")
+        .. "~" .. table.concat(spells, ".")
+        .. "~" .. table.concat(talents, ".")
+    return NIE_BASE .. out, #spells, #talents, missing, (pathSp ~= nil)
+end
+
 -- name -> CA entry map for the import (built once; ~6000 local reads)
 local importNameMap
 local function ImportNameMap()
@@ -2029,6 +2088,31 @@ importBtn:SetScript("OnClick", function()
     ioEdit:SetFocus()
 end)
 
+-- v6.4 (user): shareable ascension.nie.one link (Ctrl+C ready)
+local linkBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
+linkBtn:SetWidth(60) linkBtn:SetHeight(18)
+linkBtn:SetPoint("BOTTOMLEFT", 580, 6)
+linkBtn:SetText("Link")
+linkBtn:SetScript("OnClick", function()
+    local url, ns, nt, missing, hasPath = BuildLink(ioIncl:GetChecked() and true or false)
+    if not url then Msg("select a build on the left first.") return end
+    ioFrame.exportMode = false   -- read-only text, not an import target
+    ioFrame:Show()
+    ioEdit:SetText(url)
+    ioEdit:HighlightText()
+    ioEdit:SetFocus()
+    Msg("link: |cff40ff40" .. ns .. " spells, " .. nt .. " talents"
+        .. (hasPath and "" or ", |cffff8800no path|r")
+        .. (missing > 0 and ("|r, |cffff8800" .. missing .. " without a spell id skipped") or "")
+        .. "|r -- Ctrl+C. |cffffd100Double-check it opens the right build.|r")
+end)
+linkBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Shareable ascension.nie.one link for the selected build\n(base-36 spell ids). Ctrl+C to copy.", 1, 1, 1, 1, true)
+    GameTooltip:Show()
+end)
+linkBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 -- ==================== v5.2: GEAR side pane (user request) ====================
 -- "Real equipped items instead of the generic summary": item list on the
 -- left (hover = full tooltip, enchants included -- the stored links carry
@@ -2149,7 +2233,7 @@ gearPane:SetScript("OnShow", RefreshGear)
 
 local gearBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
 gearBtn:SetWidth(84) gearBtn:SetHeight(18)
-gearBtn:SetPoint("BOTTOMLEFT", 580, 6)
+gearBtn:SetPoint("BOTTOMLEFT", 648, 6)
 gearBtn:SetText("Show gear")
 gearBtn:SetScript("OnClick", function()
     if gearPane:IsShown() then gearPane:Hide() else gearPane:Show() end

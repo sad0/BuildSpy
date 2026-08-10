@@ -44,6 +44,9 @@ Path, spells and talents sorted by rarity then level, and the gear as exact
 `itemID:enchantID` pairs. **Import** reads one back, unknown names reported.
 A toggle chooses whether ignored entries ship too.
 
+**Link** copies a shareable `ascension.nie.one` build link (base-36 spell
+ids) — paste it in guild chat or a browser and the build opens on the site.
+
 ![Export dialog](screenshots/export-dialog.png)
 
 ## Reproduce builds
