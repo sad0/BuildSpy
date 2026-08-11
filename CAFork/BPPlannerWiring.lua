@@ -749,56 +749,57 @@ KWIndex = function(i)
     return i
 end
 
--- groupes de mots (3 par ligne) ; match = sous-chaine tooltip sauf etype/quality
+-- groupes de mots (5 par ligne) ; match = sous-chaine tooltip sauf etype/quality ;
+-- icon = paire miroir autour du titre centre (quiz user 11/08)
 local KW_GROUPS = {
     { "Type", {
         { "Ability", etype = "Ability" }, { "Talent", etype = "Talent" }, { "Spell" },
-    } },
+    }, icon = "INV_Scroll_03" },
     { "Card Rarity", {
         { "Common", quality = 1 }, { "Uncommon", quality = 2 }, { "Rare", quality = 3 },
         { "Epic", quality = 4 }, { "Legendary", quality = 5 },
-    } },
+    }, icon = "INV_Misc_Gem_Variety_01" },
     { "School", {
         { "Fire" }, { "Frost" }, { "Shadow" },
         { "Nature" }, { "Arcane" }, { "Holy" },
         { "Physical" }, { "Damage" },
-    } },
+    }, icon = "Spell_Arcane_Arcane01" },
     { "Combat", {
         { "Melee" }, { "Range" }, { "Weapon" },
         { "Attack" }, { "Casting", any = { "sec cast", "channel" }, castTime = true },
         { "Instant" },
-    } },
+    }, icon = "Ability_DualWield" },
     { "Weapon Type", {
         -- 1H/2H sur leur propre ligne : combinables avec un type (2-Handed + Axe)
         { "1-Handed", match = "one-hand" }, { "2-Handed", match = "two-hand", rowend = true },
-        { "Axe" }, { "Mace" }, { "Sword" }, { "Dagger" },
-        { "Fist" }, { "Polearm" }, { "Staff" }, { "Wand" },
-        { "Bow" }, { "Gun" }, { "Crossbow" }, { "Thrown" },
-    } },
+        { "Axe" }, { "Mace" }, { "Sword" }, { "Dagger" }, { "Fist" },
+        { "Polearm" }, { "Staff" }, { "Wand" }, { "Bow" }, { "Gun" },
+        { "Crossbow" }, { "Thrown" },
+    }, icon = "INV_Axe_01" },
     { "Armor Type", {
         { "Cloth" }, { "Leather" }, { "Mail" }, { "Plate" },
         { "Shield" },
-    } },
+    }, icon = "INV_Chest_Plate06" },
     { "Control", {
         { "Stun" }, { "Slow" }, { "Root" },
         { "Silence" }, { "Interrupt" }, { "Fear" },
         { "Taunt" }, { "Charge" }, { "Immune" },
-    } },
+    }, icon = "Spell_Nature_Polymorph" },
     { "Defense", {
         { "Armor" }, { "Block" }, { "Dodge" },
         { "Parry" }, { "Absorb" }, { "Threat" },
-    } },
+    }, icon = "Ability_Defend" },
     { "Healing", {
         { "Heal" }, { "Restore" }, { "Drain" },
-    } },
+    }, icon = "Spell_Nature_HealingTouch" },
     { "Stats", {
         { "Atk Pwr", match = "attack power" }, { "Spell Pwr", match = "spell power" }, { "Haste" },
         { "Critical" }, { "Stamina" }, { "Strength" },
         { "Agility" }, { "Intellect" }, { "Spirit" },
-    } },
+    }, icon = "Spell_Holy_WordFortitude" },
     { "Cooldown", {
         { "Has CD", cd = true }, { "No CD", cd = false },
-    } },
+    }, icon = "INV_Misc_PocketWatch_01" },
     { "Cost", {
         { "Rage", ptype = 1, patterns = { "%d+ rage" } },
         { "Energy", ptype = 3, patterns = { "%d+ energy" } },
@@ -806,13 +807,13 @@ local KW_GROUPS = {
         { "Blood", patterns = { "%d+ blood" } },
         { "Unholy", patterns = { "%d+ unholy" } },
         { "Frost", patterns = { "%d+ frost" } },
-    } },
+    }, icon = "INV_Elemental_Mote_Mana" },
     { "Misc", {
         { "Pet" }, { "Summon" }, { "Totem" },
         { "Aura" }, { "Form" }, { "Stealth" },
         { "Poison" }, { "Disease" }, { "Curse" },
         { "Speed" },
-    } },
+    }, icon = "INV_Misc_Dice_01" },
 }
 
 local QCOLORS = { [1] = { 0.9, 0.9, 0.9 }, [2] = { 0.1, 1, 0 }, [3] = { 0, 0.44, 0.87 },
@@ -839,7 +840,7 @@ local function WireKeywords(f)
     -- (clamp ecran : si pas la place, elle glisse par-dessus le bord au lieu de
     -- sortir de l'ecran) ; position retenue dans la DB
     local p = CreateFrame("Frame", "BPPlannerKeywords", f)
-    p:SetWidth(266) -- 4 mots par ligne (61px + 2px d'air)
+    p:SetWidth(328) -- 5 mots par ligne (61px + 2px d'air)
     local pl = PDB()
     p:SetPoint("TOPLEFT", f, "TOPRIGHT", pl.kwX or 1, pl.kwY or -14)
     p:SetMovable(true)
@@ -879,15 +880,28 @@ local function WireKeywords(f)
 
     local y = -26
     for _, group in ipairs(KW_GROUPS) do
+        -- titre CENTRE, encadre par la meme icone en miroir
         local h = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        h:SetPoint("TOPLEFT", 10, y)
+        h:SetPoint("TOP", p, "TOP", 0, y)
         h:SetText(group[1])
         h:SetTextColor(1, 0.82, 0)
-        y = y - 14
+        if group.icon then
+            local icL = p:CreateTexture(nil, "OVERLAY")
+            icL:SetSize(13, 13)
+            icL:SetTexture("Interface\\Icons\\" .. group.icon)
+            icL:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            icL:SetPoint("RIGHT", h, "LEFT", -5, 0)
+            local icR = p:CreateTexture(nil, "OVERLAY")
+            icR:SetSize(13, 13)
+            icR:SetTexture("Interface\\Icons\\" .. group.icon)
+            icR:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            icR:SetPoint("LEFT", h, "RIGHT", 5, 0)
+        end
+        y = y - 15
         local col = 0
         for idx, def in ipairs(group[2]) do
             def.match = def.match or string.lower(def[1])
-            if col >= 4 then
+            if col >= 5 then
                 col = 0
                 y = y - 21
             end
@@ -895,7 +909,7 @@ local function WireKeywords(f)
             b:SetSize(61, 19)
             b:SetPoint("TOPLEFT", 8 + col * 63, y)
             col = col + 1
-            if def.rowend then col = 4 end -- force le saut de ligne apres ce mot
+            if def.rowend then col = 5 end -- force le saut de ligne apres ce mot
             b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 9,
                 insets = { left = 2, right = 2, top = 2, bottom = 2 } })
