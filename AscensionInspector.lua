@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- BuildSpy v5.0 (2026-08-09) -- formerly "AscensionInspector"; renamed for the
 -- public release (user quiz 09/08). Internal names (slash /ains, SavedVariables
 -- AscensionInspectorDB, _G.AscensionInspector_* bridges) are UNCHANGED so no
@@ -221,7 +221,7 @@ local function TryDirectBuild(unit, rec)
     local CA = _G.C_CharacterAdvancement
     if not CA then return 0 end
     local db = DB()
-    local hits, src = {}, nil
+    local hits, src, srcMk = {}, nil, nil
     -- v3.1.1: samples PER API (the single sample kept being stolen by the
     -- self capture -- GetInspectedBuild's were never recorded)
     local function sample(tag, raw)
@@ -260,10 +260,14 @@ local function TryDirectBuild(unit, rec)
         local active = UnitSpecIndex(CA, unit)
         local uname = UnitName(unit)
         local guid = UnitGUID and UnitGUID(unit) or nil
+        -- v7.1 : mk(slot) = rebuild the same form for ANOTHER spec slot -- only
+        -- the slot-parameterized forms can harvest the other specs
         local forms = {
             { d = "()", a = {} }, { d = "(unit)", a = { unit } },
-            { d = "(" .. active .. ")", a = { active } }, { d = "(unit," .. active .. ")", a = { unit, active } },
-            { d = "(1)", a = { 1 } }, { d = "(unit,1)", a = { unit, 1 } },
+            { d = "(" .. active .. ")", a = { active }, mk = function(s) return { s } end },
+            { d = "(unit," .. active .. ")", a = { unit, active }, mk = function(s) return { unit, s } end },
+            { d = "(1)", a = { 1 }, mk = function(s) return { s } end },
+            { d = "(unit,1)", a = { unit, 1 }, mk = function(s) return { unit, s } end },
         }
         if uname then forms[#forms + 1] = { d = "(name)", a = { uname } } end
         if guid then forms[#forms + 1] = { d = "(guid)", a = { guid } } end
@@ -282,6 +286,7 @@ local function TryDirectBuild(unit, rec)
                 if #n > 0 then
                     hits = n
                     src = "GetInspectedBuild" .. f.d
+                    srcMk = f.mk   -- v7.1 : remember how to re-ask per slot
                 end
             end
             diag[#diag + 1] = f.d .. "=" .. ty
@@ -289,16 +294,13 @@ local function TryDirectBuild(unit, rec)
         end
         rec.inspectedBuildDiag = table.concat(diag, "  ")
     end
-    if #hits > 0 then
-        local CAref = CA
-        for _, h in ipairs(hits) do h.name = h.name or EntryName(CAref, h.id) end
-        local slot = UnitSpecIndex(CA, unit)
+    -- v7.1 : shared store (name fill + caSpecs[slot] + Path from mastery hits)
+    local function StoreSlot(slot, list)
+        for _, h in ipairs(list) do h.name = h.name or EntryName(CA, h.id) end
         rec.caSpecs = rec.caSpecs or {}
-        rec.caSpecs[slot] = hits
-        rec.caProbeNote = "direct " .. src .. " slot" .. slot .. "=" .. #hits
-        -- v3.4: a mastery ("Path of ...") among the hits = the Path
+        rec.caSpecs[slot] = list
         if CA.IsMastery then
-            for _, h in ipairs(hits) do
+            for _, h in ipairs(list) do
                 local okm, m = pcall(CA.IsMastery, h.id)
                 if okm and m and h.name then
                     rec.pathBySpec = rec.pathBySpec or {}
@@ -307,8 +309,50 @@ local function TryDirectBuild(unit, rec)
                 end
             end
         end
+    end
+    if #hits > 0 then
+        local slot = UnitSpecIndex(CA, unit)
+        StoreSlot(slot, hits)
+        rec.caProbeNote = "direct " .. src .. " slot" .. slot .. "=" .. #hits
+        -- v7.1 (user : "aspirer les builds des autres spes aussi") : when the
+        -- winning form is slot-parameterized, re-ask it for EVERY spec slot
+        -- advertised by GetInspectInfo (fallback 1..MAX_SPEC_SLOTS). Works for
+        -- others AND self (InspectUnit ran in the event pass). Empty slots
+        -- normalize to 0 hits and are skipped.
+        local extra = {}
+        local mk = srcMk
+        if not mk and UnitIsUnit(unit, "player") and CA.GetInspectedBuild then
+            -- self came from GetKnown*Entries : probe the pair form for the rest
+            mk = function(s) return { unit, s } end
+        end
+        if mk then
+            local slotList = {}
+            local ii = rec.caInspectInfo and rec.caInspectInfo[2]
+            if type(ii) == "table" then
+                for _, v in pairs(ii) do
+                    if type(v) == "number" then slotList[#slotList + 1] = v end
+                end
+            end
+            if #slotList == 0 then
+                for s = 1, MAX_SPEC_SLOTS do slotList[#slotList + 1] = s end
+            end
+            for _, s in ipairs(slotList) do
+                if s ~= slot and not (rec.caSpecs and rec.caSpecs[s] and #rec.caSpecs[s] > 0) then
+                    local ok2, r2 = pcall(CA.GetInspectedBuild, unpack(mk(s)))
+                    if ok2 and type(r2) == "table" then
+                        local n2 = NormalizeEntryList(r2)
+                        if #n2 > 0 then
+                            StoreSlot(s, n2)
+                            extra[#extra + 1] = s .. "=" .. #n2
+                        end
+                    end
+                end
+            end
+        end
         Msg((UnitName(unit) or "?") .. ": |cff40ff40" .. #hits .. " entries via " .. src
-            .. " (spec " .. slot .. ")|r.  |cffaaaaaa/ains builds to browse, /reload to write.|r")
+            .. " (spec " .. slot .. ")|r"
+            .. (#extra > 0 and ("  |cff88ff88+ other specs " .. table.concat(extra, ", ") .. "|r") or "")
+            .. ".  |cffaaaaaa/ains builds to browse, /reload to write.|r")
         if BuildsChanged then BuildsChanged() end
     end
     return #hits
@@ -1637,6 +1681,11 @@ RefreshAll = function()
             end
             if d.target == selTarget and d.slot == selSlot then r.hl:Show() else r.hl:Hide() end
             r:SetScript("OnClick", function()
+                -- v7.0 : shift-click = share token into the chat editbox
+                if IsShiftKeyDown() and _G.BuildSpy_ShareInsert then
+                    _G.BuildSpy_ShareInsert(d.target, d.slot)
+                    return
+                end
                 selTarget, selSlot = d.target, d.slot
                 tabOff = 0
                 PrepareRows()
@@ -2079,6 +2128,13 @@ local function StoreArmoryBuild(name, pathToken, entryIds, gearStr)
     if BuildsChanged then BuildsChanged() else RefreshAll() end
 end
 
+-- v7.2 : the Build Planer (BuildPlanner.lua) stores its exported plans through
+-- the same door as the armory import -- same name = overwrite, refresh included.
+_G.BuildSpy_StoreBuild = StoreArmoryBuild
+-- quiz user 11/08 : le planner colore ses entrees a la rarete des SKILL CARDS
+-- (meme source que la liste de builds), repli qualite CA sinon.
+_G.BuildSpy_CardQual = CardQualOf
+
 local function ImportText(txt)
     txt = txt or ""
     -- v6.14: armory single-line format FIRST (it also uses "~")
@@ -2210,6 +2266,155 @@ local function ImportText(txt)
     PrepareRows() SortRows() RefreshAll()
 end
 
+-- ===================== v7.0 : CHAT SHARE (WeakAuras-style) ====================
+-- Shift-click a build row -> a "[BuildSpy: Name:slot]" token goes into the chat
+-- editbox. The 3.3.5 client STRIPS unknown hyperlinks from NETWORK messages, so
+-- (like the WeakAuras backports) each receiver's BuildSpy REWRITES the plain
+-- token into a clickable custom link via a chat-message filter -- both sides
+-- need the addon. Clicking the link sends an addon-message request to the
+-- SENDER, who streams the build as chunked BSPY1 (the armory single-line format
+-- ImportText already understands). 255-byte addon-message limit -> 200B chunks.
+local SHARE_PREFIX = "BSPY"
+
+-- ca internal id -> path token (inverse of PATH_BY_TOKEN ; 1152 = spirit/healing,
+-- either token round-trips to the same CA entry)
+local TOKEN_BY_CA = {}
+for tok, ca in pairs(PATH_BY_TOKEN) do TOKEN_BY_CA[ca] = TOKEN_BY_CA[ca] or tok end
+
+-- serialize a stored build as single-line BSPY1 (the fields StoreArmoryBuild eats)
+local function SerializeBSPY1(target, slot)
+    local rec = DB().targets[target]
+    local hits = rec and rec.caSpecs and rec.caSpecs[slot]
+    if not hits then return nil end
+    local pinfo = PathInfo(target, slot)
+    local ids = {}
+    for _, h in ipairs(hits) do
+        if not (pinfo and h.id == pinfo.hid) then ids[#ids + 1] = h.id end
+    end
+    local tok = (pinfo and TOKEN_BY_CA[pinfo.hid]) or ""
+    local gear = {}
+    local g = rec.gearBySpec and (rec.gearBySpec[slot]
+        or (rec.activeSpec and rec.gearBySpec[rec.activeSpec]))
+    if g and g.items then
+        local slots = {}
+        for s in pairs(g.items) do slots[#slots + 1] = s end
+        table.sort(slots)
+        for _, s in ipairs(slots) do
+            local id, ench = string.match(g.items[s], "item:(%d+):(%-?%d+)")
+            id = id or string.match(g.items[s], "item:(%d+)")
+            if id then gear[#gear + 1] = s .. "." .. id .. "." .. (ench or 0) end
+        end
+    end
+    return "BSPY1~" .. string.gsub(target, "~", "") .. "~" .. tok .. "~"
+        .. table.concat(ids, ",") .. "~" .. table.concat(gear, ",")
+end
+
+-- shift-click entry point (called from the build rows ; global on purpose --
+-- the rows are wired before this module loads)
+function BuildSpy_ShareInsert(target, slot)
+    local token = "[BuildSpy: " .. target .. ":" .. slot .. "]"
+    local edit = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow()
+    if edit and edit:IsShown() then
+        edit:Insert(token)
+    else
+        Msg("open a chat input first (Enter), then shift-click the build. Token: " .. token)
+    end
+end
+
+-- receivers rewrite the plain token into a clickable link (local hyperlink)
+local function ShareFilter(_, _, msg, sender, ...)
+    if type(msg) == "string" and string.find(msg, "[BuildSpy: ", 1, true) then
+        local new = string.gsub(msg, "%[BuildSpy: ([^%s:%]]+):(%d+)%]", function(t, s)
+            return "|cff33ccff|HBSPY:" .. (sender or "?") .. ":" .. t .. ":" .. s
+                .. "|h[BuildSpy: " .. t .. " spec " .. s .. "]|h|r"
+        end)
+        if new ~= msg then return false, new, sender, ... end
+    end
+end
+for _, ev in ipairs({ "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_CHANNEL",
+    "CHAT_MSG_BATTLEGROUND", "CHAT_MSG_BATTLEGROUND_LEADER" }) do
+    pcall(ChatFrame_AddMessageEventFilter, ev, ShareFilter)
+end
+
+-- click on the link -> request the build from the sender.
+-- v7.0.1 (user, live error) : hooksecurefunc(SetItemRef) let the ORIGINAL
+-- Blizzard handler run first -> ItemRefTooltip:SetHyperlink("BSPY:...") ->
+-- "Unknown link type" error. Intercept BEFORE it instead, at each chat frame's
+-- OnHyperlinkClick script (never replacing a Blizzard global -- taint rule) :
+-- our prefix is swallowed, everything else flows to the original handler.
+local rxReq = {}   -- [sender] = time of our request (gate against spoofed pushes)
+local function ShareClick(link)
+    local sender, target, slot = string.match(link or "", "^BSPY:([^:]+):([^:]+):(%d+)$")
+    if not sender then return false end
+    if sender == UnitName("player") then
+        Msg("that's your own share -- the build is already in your list.")
+        return true
+    end
+    rxReq[sender] = GetTime()
+    SendAddonMessage(SHARE_PREFIX, "R\t" .. target .. "\t" .. slot, "WHISPER", sender)
+    Msg("requesting " .. target .. " spec " .. slot .. " from " .. sender .. "...")
+    return true
+end
+for i = 1, (NUM_CHAT_WINDOWS or 10) do
+    local cf = _G["ChatFrame" .. i]
+    if cf then
+        local orig = cf:GetScript("OnHyperlinkClick")
+        cf:SetScript("OnHyperlinkClick", function(self, link, text, button, ...)
+            if type(link) == "string" and string.sub(link, 1, 5) == "BSPY:" then
+                ShareClick(link)
+                return
+            end
+            if orig then return orig(self, link, text, button, ...) end
+        end)
+    end
+end
+
+-- addon-message protocol : R(equest) -> H(eader, n parts) + D(ata i chunk) | N(o)
+local rxBuf = {}
+local shareEv = CreateFrame("Frame")
+shareEv:RegisterEvent("CHAT_MSG_ADDON")
+shareEv:SetScript("OnEvent", function(_, _, prefix, message, channel, sender)
+    if prefix ~= SHARE_PREFIX or channel ~= "WHISPER" then return end
+    local op, rest = string.match(message or "", "^(%a)\t(.*)$")
+    if op == "R" then
+        local target, slot = string.match(rest, "^([^\t]+)\t(%d+)$")
+        local data = target and SerializeBSPY1(target, tonumber(slot))
+        if not data then
+            SendAddonMessage(SHARE_PREFIX, "N\t-", "WHISPER", sender)
+            return
+        end
+        local n = math.ceil(#data / 200)
+        SendAddonMessage(SHARE_PREFIX, "H\t" .. n, "WHISPER", sender)
+        for i = 1, n do
+            SendAddonMessage(SHARE_PREFIX, "D\t" .. i .. "\t"
+                .. string.sub(data, (i - 1) * 200 + 1, i * 200), "WHISPER", sender)
+        end
+        Msg("sent build " .. target .. " spec " .. tostring(slot) .. " to " .. sender
+            .. " (" .. n .. " part" .. (n > 1 and "s" or "") .. ").")
+    elseif op == "H" then
+        if not (rxReq[sender] and (GetTime() - rxReq[sender]) < 30) then return end
+        rxBuf[sender] = { n = tonumber(rest) or 0, parts = {} }
+    elseif op == "D" then
+        local b = rxBuf[sender]
+        if not b then return end
+        local i, chunk = string.match(rest, "^(%d+)\t(.*)$")
+        i = tonumber(i)
+        if not i then return end
+        b.parts[i] = chunk
+        local got = 0
+        for k = 1, b.n do if b.parts[k] then got = got + 1 end end
+        if b.n > 0 and got >= b.n then
+            rxBuf[sender], rxReq[sender] = nil, nil
+            Msg("build received from " .. sender .. " -- importing.")
+            ImportText(table.concat(b.parts))
+        end
+    elseif op == "N" then
+        Msg(sender .. " no longer has that build.")
+    end
+end)
+
 -- shared dialog: Export fills it (ready to Ctrl+C), Import parses its content
 local ioFrame = CreateFrame("Frame", "BuildSpyIO", UIParent)
 ioFrame:SetWidth(470) ioFrame:SetHeight(380)
@@ -2332,6 +2537,74 @@ linkBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetText("Shareable ascension.nie.one link for the selected build\n(base-36 spell ids). Ctrl+C to copy.", 1, 1, 1, 1, true)
     GameTooltip:Show()
 end)
+
+-- v7.2 (user) : [Edit] -- loads the SELECTED build into the Build Planer as a
+-- COPY named "<name> (edit)" (quiz: the export can never overwrite the original).
+local editBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
+editBtn:SetWidth(52) editBtn:SetHeight(18)
+editBtn:SetPoint("BOTTOMLEFT", 10, 6)
+editBtn:SetText("Edit")
+editBtn:SetScript("OnClick", function()
+    local rec = selTarget and DB().targets[selTarget]
+    local hits = rec and rec.caSpecs and rec.caSpecs[selSlot]
+    if not hits then Msg("select a build on the left first.") return end
+    if not _G.BuildPlanner_LoadBuild then Msg("|cffff4040Build Planer missing (TOC?).|r") return end
+    local pinfo = PathInfo(selTarget, selSlot)
+    local ids = {}
+    for _, h in ipairs(hits) do
+        if not (pinfo and h.id == pinfo.hid) then ids[#ids + 1] = h.id end
+    end
+    local tok = pinfo and TOKEN_BY_CA[pinfo.hid] or nil
+    _G.BuildPlanner_LoadBuild(selTarget .. " (edit)", tok, ids)
+end)
+editBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Open the selected build in the Build Planer as a copy\n('name (edit)') -- exporting never overwrites the original.", 1, 1, 1, 1, true)
+    GameTooltip:Show()
+end)
+editBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+-- v7.2 (user) : [Spec #] -- move the SELECTED build to another spec slot
+-- (occupied destination = the two builds SWAP, nothing is ever lost).
+local function MoveBuildSlot(target, from, to)
+    local rec = DB().targets[target]
+    if not (rec and rec.caSpecs and rec.caSpecs[from]) then return false end
+    if from == to then return false end
+    local function swp(t) if t then t[from], t[to] = t[to], t[from] end end
+    swp(rec.caSpecs) swp(rec.comments) swp(rec.ignored) swp(rec.pathBySpec) swp(rec.gearBySpec)
+    return true
+end
+StaticPopupDialogs["BUILDSPY_SPECNUM"] = {
+    text = "New spec # for %s (currently spec %s):",
+    button1 = OKAY, button2 = CANCEL,
+    hasEditBox = 1, maxLetters = 2,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+    OnAccept = function(self)
+        local n = tonumber(self.editBox and self.editBox:GetText() or "")
+        if not n or n < 1 or n > 20 then Msg("spec # must be 1-20.") return end
+        if MoveBuildSlot(selTarget, selSlot, n) then
+            Msg(selTarget .. ": spec " .. selSlot .. " -> spec " .. n
+                .. (DB().targets[selTarget].caSpecs[selSlot] and " (swapped with the build already there)" or ""))
+            selSlot = n
+            PrepareRows() SortRows() RefreshAll()
+        end
+    end,
+}
+local specBtn = CreateFrame("Button", nil, bui, "UIPanelButtonTemplate")
+specBtn:SetWidth(58) specBtn:SetHeight(18)
+specBtn:SetPoint("BOTTOMLEFT", 66, 6)
+specBtn:SetText("Spec #")
+specBtn:SetScript("OnClick", function()
+    local rec = selTarget and DB().targets[selTarget]
+    if not (rec and rec.caSpecs and rec.caSpecs[selSlot]) then Msg("select a build on the left first.") return end
+    StaticPopup_Show("BUILDSPY_SPECNUM", selTarget, tostring(selSlot))
+end)
+specBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Move the selected build to another spec slot (1-20).\nOccupied destination = the two builds swap.", 1, 1, 1, 1, true)
+    GameTooltip:Show()
+end)
+specBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 linkBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 -- ==================== v5.2: GEAR side pane (user request) ====================
@@ -2666,6 +2939,52 @@ SlashCmdList["ASCINSPECT"] = function(msg)
         if n == 0 then Msg("no capture yet -- Grab button (inspect window) or /ains on a target.") end
     elseif msg == "builds" then
         ToggleBuilds()
+    elseif msg == "cards" then
+        -- v4.2: READ-ONLY probe of the Skill Cards APIs (SkillCardPlanner --
+        -- prerequisite to auto placement, unknown signatures)
+        if _G.AscensionInspector_CardProbe then
+            _G.AscensionInspector_CardProbe()
+        else
+            Msg("SkillCardPlanner missing (TOC?)")
+        end
+    elseif msg == "cardspy" then
+        -- v4.2.1: spy on the C_SkillCard calls made by the client's own UI
+        if _G.AscensionInspector_CardSpy then
+            _G.AscensionInspector_CardSpy()
+        else
+            Msg("SkillCardPlanner missing (TOC?)")
+        end
+    elseif msg == "rollspy" then
+        -- v4.3.1: C_Wildcard spy (check/uncheck a Desired spell by hand)
+        if _G.AscensionInspector_RollSpy then
+            _G.AscensionInspector_RollSpy()
+        else
+            Msg("SkillCardPlanner missing (TOC?)")
+        end
+    elseif msg == "plan" then
+        if _G.BuildPlanner_Toggle then _G.BuildPlanner_Toggle() else Msg("Build Planer missing (TOC?)") end
+    elseif msg == "cafork" then
+        -- v7.3 (user : "copie leur addon, on changera les fonctions apres") :
+        -- CAFork/ = clone RENOMME (prefixe BP) de Ascension_CharacterAdvancement.
+        -- Etape 1 = parite VISUELLE ; detache de Collections pour le test.
+        local f = _G.BPCharacterAdvancement
+        if not f then Msg("CAFork missing (TOC?)") return end
+        if f:IsShown() then f:Hide() return end
+        f:SetParent(UIParent)
+        f:ClearAllPoints()
+        f:SetPoint("CENTER", 0, 0)
+        f:SetFrameStrata("HIGH")
+        -- v7.3.1 (user "meme taille") : le detache copie l'ECHELLE de Collections
+        -- (l'original y vit ; UIParent n'a pas la meme -> il paraissait petit)
+        pcall(function()
+            if _G.Collections then
+                f:SetScale(Collections:GetEffectiveScale() / UIParent:GetEffectiveScale())
+            end
+        end)
+        f:Show()
+        Msg("CAFork shown (debug detache) -- l'onglet Build Planer de Collections est la vraie maison.")
+    elseif msg == "cadump" then
+        if _G.BuildPlanner_CADump then _G.BuildPlanner_CADump() else Msg("Build Planer missing (TOC?)") end
     elseif msg == "ui" then
         -- v3.2.1: capture the STRUCTURE of the inspection's Build tab
         -- (*Inspect*Build* globals, each frame's keys) -> plan C: scrape the
@@ -2744,98 +3063,8 @@ local mmToggleL = bui:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 mmToggleL:SetPoint("RIGHT", mmToggle, "LEFT", 2, 0)
 mmToggleL:SetText("minimap button")
 
--- v6.9 (user): "Accelerated Roll" toggle above the minimap one -- skips the
--- Wildcard dice reveal animation (moved here from sad0-QoL). The client
--- re-sets each animation's duration right before playing, so we WRAP
--- SetDuration on every dice animation (except the resting Hover) to force 0
--- while the toggle is on; the wrapper is transparent when off.
-local function FastRollOn() return DB().fastRoll and true or false end
-local diceOrig = {}
-local function DiceWalk(o, fn, depth)
-    if depth > 8 then return end   -- v6.12: reveal cards nest deeper
-    pcall(function()
-        for k, v in pairs(o) do
-            if type(k) == "string" and type(v) == "table" and v.GetObjectType then
-                local okv, vt = pcall(v.GetObjectType, v)
-                if okv and vt == "AnimationGroup" then fn(k, v) end
-            end
-        end
-    end)
-    pcall(function()
-        if o.GetChildren then
-            for _, c in ipairs({ o:GetChildren() }) do DiceWalk(c, fn, depth + 1) end
-        end
-    end)
-end
--- fast dice reveal -- wrap SetDuration on every animation of the dice frame
--- (the client re-sets durations right before Play, so a permanent wrapper is
--- the only reliable lever) ; forces 0 while the toggle is on, transparent off.
-local function FastWrapAnim(a)
-    if diceOrig[a] == nil then
-        local okd, dur = pcall(a.GetDuration, a)
-        diceOrig[a] = (okd and dur) or false
-    end
-    if not a.__fastWrapped and type(a.SetDuration) == "function" then
-        local orig = a.SetDuration
-        a.__fastWrapped = true
-        a.SetDuration = function(self, dur)
-            return orig(self, FastRollOn() and 0 or dur)
-        end
-    end
-    pcall(a.SetDuration, a, FastRollOn() and 0 or (diceOrig[a] or 0))
-    if FastRollOn() then pcall(a.SetStartDelay, a, 0) end
-end
-local function FastWrapTree(root, skipKey)
-    if not root then return end
-    DiceWalk(root, function(key, group)
-        if skipKey and key == skipKey then return end
-        if not group.GetAnimations then return end
-        local ok, list = pcall(function() return { group:GetAnimations() } end)
-        if ok then for _, a in ipairs(list) do FastWrapAnim(a) end end
-    end, 0)
-end
-local function ApplyFastRoll()
-    FastWrapTree(_G.WildCardDice, "Hover")        -- dice (keep the idle Hover)
-end
-local fastToggle = CreateFrame("CheckButton", nil, bui, "UICheckButtonTemplate")
-fastToggle:SetWidth(20) fastToggle:SetHeight(20)
-fastToggle:SetPoint("BOTTOMRIGHT", mmToggle, "TOPRIGHT", 0, 2)
-fastToggle:SetScript("OnClick", function(self)
-    DB().fastRoll = self:GetChecked() and true or false
-    ApplyFastRoll()
-end)
-fastToggle:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:SetText("Accelerated Roll", 1, 1, 1)
-    GameTooltip:AddLine("Skips the Wildcard dice reveal animation when you\nclick to reveal a spell -- the result appears instantly\n(the idle dice wobble is kept). Off by default.", 0.8, 0.8, 0.8, true)
-    GameTooltip:Show()
-end)
-fastToggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
-local fastToggleL = bui:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-fastToggleL:SetPoint("RIGHT", fastToggle, "LEFT", 2, 0)
-fastToggleL:SetText("Accelerated Roll")
--- apply at boot (poll: WildCardDice is created after login) + on every reveal
--- boot : hooke OnShow du de ET de la fenetre Skill Cards des qu'ils existent
--- (nÃ©s aprÃ¨s le login) ; puis un tick leger re-parcourt Skill Cards tant
--- qu'elle est ouverte (ses cartes de reveal sont POOLÃ‰ES Ã  la volÃ©e).
-local frBoot = CreateFrame("Frame")
-frBoot.acc, frBoot.diceHook, frBoot.cardHook, frBoot.left = 0, false, false, 30
-frBoot:SetScript("OnUpdate", function(self, e)
-    self.acc = self.acc + e
-    if self.acc < 1 then return end
-    self.acc = 0 self.left = self.left - 1
-    if _G.WildCardDice and not self.diceHook and _G.WildCardDice.HookScript then
-        self.diceHook = true
-        _G.WildCardDice:HookScript("OnShow", function() if FastRollOn() then ApplyFastRoll() end end)
-    end
-    ApplyFastRoll()
-    if self.diceHook or self.left <= 0 then
-        self:SetScript("OnUpdate", nil)
-    end
-end)
 bui:HookScript("OnShow", function()
     mmToggle:SetChecked(MinimapWanted())
-    fastToggle:SetChecked(FastRollOn())
     -- v6.9: grey the Auto-Roll button when AscensionAutoRoll isn't loaded
     if _G.AscensionAutoRoll then arBtn:Enable() else arBtn:Disable() end
 end)
@@ -2894,4 +3123,3 @@ end)
 
 EnsureButton()
 Msg("loaded -- Grab button on the inspection window, /ains, /ains builds|self|list|clear|cal|api.")
-

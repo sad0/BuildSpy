@@ -98,10 +98,33 @@ you in chat to double-check the result yourself.
   its Analyze. You still press **Start** there yourself. (The button is greyed
   out when AscensionAutoRoll isn't installed.)
 
-The **Accelerated Roll** toggle (bottom-right of the window) skips the
-Wildcard dice reveal animation, so a rolled spell appears instantly.
-
 [AscensionAutoRoll]: https://www.curseforge.com/wow/addons
+
+## Build Planer
+
+A new **Build Planer** tab in the Collections window (next to Character
+Advancement) — the CA book itself, rewired into a planner:
+
+- Start from a **blank plan** and click spells/talents in the right-hand list
+  to add them (click again or right-click to remove). Your picks jump to the
+  top of the list, and the Summary pages fill up like a real build.
+- **Essence budgets are enforced**: 60 Ability Essence (2 per ability) and
+  25 Talent Essence (1 per talent) — level-60 Wildcard values.
+- A detached **Keywords** panel filters the list by *several* words at once —
+  something the search box can't do (it only matches one exact phrase).
+  Words light up when active and combine with AND: `Rage` + `Attack` finds
+  every spell whose tooltip mentions both. Type, Card Rarity, Cooldown and
+  Cost filters check the spell's actual properties, not just its text.
+- Footer buttons: **New**, **Load** (edit any grabbed build as a copy),
+  **Save** (the plan becomes a normal BuildSpy build — Skill Cards, Rapid
+  Roll and Auto-Roll all work on it), and **BuildSpy** (opens the builds
+  window).
+
+## Share builds in chat
+
+**Shift-click** a build in the builds window to link it in chat, WeakAuras
+style: other BuildSpy users can click the link to receive the full build
+(spells, talents, path) over the addon channel.
 
 ## Commands
 
