@@ -880,9 +880,9 @@ local function WireKeywords(f)
 
     local y = -26
     for _, group in ipairs(KW_GROUPS) do
-        -- titre CENTRE, encadre par la meme icone en miroir
+        -- titre a gauche, encadre par la meme icone en miroir
         local h = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        h:SetPoint("TOP", p, "TOP", 0, y)
+        h:SetPoint("TOPLEFT", 8 + 18, y) -- 18 = place de l'icone gauche
         h:SetText(group[1])
         h:SetTextColor(1, 0.82, 0)
         if group.icon then
@@ -898,14 +898,12 @@ local function WireKeywords(f)
             icR:SetPoint("LEFT", h, "RIGHT", 5, 0)
         end
         y = y - 15
-        -- rangees CENTREES : on accumule la ligne puis on la positionne
         local rowBtns = {}
         local function FlushRow()
             local n = #rowBtns
             if n == 0 then return end
-            local x = (328 - (n * 63 - 2)) / 2
             for i, rb in ipairs(rowBtns) do
-                rb:SetPoint("TOPLEFT", x + (i - 1) * 63, y)
+                rb:SetPoint("TOPLEFT", 8 + (i - 1) * 63, y)
             end
             wipe(rowBtns)
             y = y - 21
