@@ -770,8 +770,8 @@ local KW_GROUPS = {
         { "Instant" },
     }, icon = "Ability_DualWield" },
     { "Weapon Type", {
-        -- 1H/2H sur leur propre ligne : combinables avec un type (2-Handed + Axe)
-        { "1-Handed", match = "one-hand" }, { "2-Handed", match = "two-hand", rowend = true },
+        -- 1H/2H combinables avec un type (2-Handed + Axe)
+        { "1-Handed", match = "one-hand" }, { "2-Handed", match = "two-hand" },
         { "Axe" }, { "Mace" }, { "Sword" }, { "Dagger" }, { "Fist" },
         { "Polearm" }, { "Staff" }, { "Wand" }, { "Bow" }, { "Gun" },
         { "Crossbow" }, { "Thrown" },
@@ -898,18 +898,22 @@ local function WireKeywords(f)
             icR:SetPoint("LEFT", h, "RIGHT", 5, 0)
         end
         y = y - 15
-        local col = 0
+        -- rangees CENTREES : on accumule la ligne puis on la positionne
+        local rowBtns = {}
+        local function FlushRow()
+            local n = #rowBtns
+            if n == 0 then return end
+            local x = (328 - (n * 63 - 2)) / 2
+            for i, rb in ipairs(rowBtns) do
+                rb:SetPoint("TOPLEFT", x + (i - 1) * 63, y)
+            end
+            wipe(rowBtns)
+            y = y - 21
+        end
         for idx, def in ipairs(group[2]) do
             def.match = def.match or string.lower(def[1])
-            if col >= 5 then
-                col = 0
-                y = y - 21
-            end
             local b = CreateFrame("Button", nil, p)
             b:SetSize(61, 19)
-            b:SetPoint("TOPLEFT", 8 + col * 63, y)
-            col = col + 1
-            if def.rowend then col = 5 end -- force le saut de ligne apres ce mot
             b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 9,
                 insets = { left = 2, right = 2, top = 2, bottom = 2 } })
@@ -925,8 +929,11 @@ local function WireKeywords(f)
                 KWRestyle(self)
                 f:Search()
             end)
+            rowBtns[#rowBtns + 1] = b
+            if #rowBtns >= 5 or def.rowend then FlushRow() end
         end
-        y = y - 21 - 6
+        FlushRow()
+        y = y - 6
     end
     p:SetHeight(-y + 6)
 
@@ -946,6 +953,11 @@ local function WireKeywords(f)
         KWRebuild()
         if kwUse then self.SideBar.SpellList:RefreshScrollFrame() end
     end)
+
+    -- reouverture du planner : la liste filtree moteur est reinitialisee a la
+    -- fermeture mais la map keywords pointait les vieux indices -> "BAD ENTRY" ;
+    -- re-poser la recherche (texte + filtres + keywords persistants) a chaque Show
+    f:HookScript("OnShow", function(self) self:Search() end)
 
     -- etat initial (le f:Search() de WireSearch a tourne AVANT ce hook)
     KWRebuild()
