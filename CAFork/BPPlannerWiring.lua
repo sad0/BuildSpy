@@ -1012,8 +1012,14 @@ local function WireKeywords(f)
 
     -- reouverture du planner : la liste filtree moteur est reinitialisee a la
     -- fermeture mais la map keywords pointait les vieux indices -> "BAD ENTRY" ;
-    -- re-poser la recherche (texte + filtres + keywords persistants) a chaque Show
-    f:HookScript("OnShow", function(self) self:Search() end)
+    -- re-poser la recherche (texte + filtres + keywords persistants) a chaque Show.
+    -- Titre + portrait aussi : OnGameModeChanged (Wildcard) les re-stampe
+    -- (CHARACTER_ADVANCEMENT + misc_rune_pvp_random, le "de bleu").
+    f:HookScript("OnShow", function(self)
+        self:Search()
+        PortraitFrame_SetTitle(self, "Build Planer - Wildcard")
+        PortraitFrame_SetIcon(self, "Interface\\Icons\\Ability_Spy")
+    end)
 
     -- etat initial (le f:Search() de WireSearch a tourne AVANT ce hook)
     KWRebuild()
@@ -1035,8 +1041,9 @@ local function Apply()
         WireSpellListRows(f)
         WireKeywords(f)
         WirePathButton(f)
-        -- portrait = icone BuildSpy (remplace le tome draenei bleu du CA)
+        -- portrait + titre du planner (re-poses a chaque OnShow, cf. WireKeywords)
         PortraitFrame_SetIcon(f, "Interface\\Icons\\Ability_Spy")
+        PortraitFrame_SetTitle(f, "Build Planer - Wildcard")
         -- onglet Specs retire : redondant avec BuildSpy (user 11/08)
         f.SideBar:HideTabID(f.SideBar.SpecTab)
         f.SideBar:SelectTabID(f.SideBar.SpellsTab)
