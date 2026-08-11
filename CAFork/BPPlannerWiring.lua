@@ -762,7 +762,8 @@ local KW_GROUPS = {
     { "School", {
         { "Fire" }, { "Frost" }, { "Shadow" },
         { "Nature" }, { "Arcane" }, { "Holy" },
-        { "Physical" }, { "Damage" },
+        { "Physical" }, { "Damage" }, { "Poison" },
+        { "Bleed" }, { "Storm" },
     }, icon = "Spell_Arcane_Arcane01" },
     { "Combat", {
         { "Melee" }, { "Range" }, { "Weapon" },
@@ -811,8 +812,7 @@ local KW_GROUPS = {
     { "Misc", {
         { "Pet" }, { "Summon" }, { "Totem" },
         { "Aura" }, { "Form" }, { "Stealth" },
-        { "Poison" }, { "Disease" }, { "Curse" },
-        { "Speed" },
+        { "Disease" }, { "Curse" }, { "Speed" },
     }, icon = "INV_Misc_Dice_01" },
 }
 
