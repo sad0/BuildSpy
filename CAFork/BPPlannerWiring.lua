@@ -768,6 +768,17 @@ local KW_GROUPS = {
         { "Attack" }, { "Casting", any = { "sec cast", "channel" }, castTime = true },
         { "Instant" },
     } },
+    { "Weapon Type", {
+        -- 1H/2H sur leur propre ligne : combinables avec un type (2-Handed + Axe)
+        { "1-Handed", match = "one-hand" }, { "2-Handed", match = "two-hand", rowend = true },
+        { "Axe" }, { "Mace" }, { "Sword" }, { "Dagger" },
+        { "Fist" }, { "Polearm" }, { "Staff" }, { "Wand" },
+        { "Bow" }, { "Gun" }, { "Crossbow" }, { "Thrown" },
+    } },
+    { "Armor Type", {
+        { "Cloth" }, { "Leather" }, { "Mail" }, { "Plate" },
+        { "Shield" },
+    } },
     { "Control", {
         { "Stun" }, { "Slow" }, { "Root" },
         { "Silence" }, { "Interrupt" }, { "Fear" },
@@ -781,7 +792,7 @@ local KW_GROUPS = {
         { "Heal" }, { "Restore" }, { "Drain" },
     } },
     { "Stats", {
-        { "Attack Pwr", match = "attack power" }, { "Spell Pwr", match = "spell power" }, { "Haste" },
+        { "Atk Pwr", match = "attack power" }, { "Spell Pwr", match = "spell power" }, { "Haste" },
         { "Critical" }, { "Stamina" }, { "Strength" },
         { "Agility" }, { "Intellect" }, { "Spirit" },
     } },
@@ -828,7 +839,7 @@ local function WireKeywords(f)
     -- (clamp ecran : si pas la place, elle glisse par-dessus le bord au lieu de
     -- sortir de l'ecran) ; position retenue dans la DB
     local p = CreateFrame("Frame", "BPPlannerKeywords", f)
-    p:SetWidth(252)
+    p:SetWidth(266) -- 4 mots par ligne (61px + 2px d'air)
     local pl = PDB()
     p:SetPoint("TOPLEFT", f, "TOPRIGHT", pl.kwX or 1, pl.kwY or -14)
     p:SetMovable(true)
@@ -873,13 +884,18 @@ local function WireKeywords(f)
         h:SetText(group[1])
         h:SetTextColor(1, 0.82, 0)
         y = y - 14
+        local col = 0
         for idx, def in ipairs(group[2]) do
             def.match = def.match or string.lower(def[1])
-            local col = (idx - 1) % 3
-            if col == 0 and idx > 1 then y = y - 21 end
+            if col >= 4 then
+                col = 0
+                y = y - 21
+            end
             local b = CreateFrame("Button", nil, p)
-            b:SetSize(76, 19)
-            b:SetPoint("TOPLEFT", 8 + col * 79, y)
+            b:SetSize(61, 19)
+            b:SetPoint("TOPLEFT", 8 + col * 63, y)
+            col = col + 1
+            if def.rowend then col = 4 end -- force le saut de ligne apres ce mot
             b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 9,
                 insets = { left = 2, right = 2, top = 2, bottom = 2 } })
