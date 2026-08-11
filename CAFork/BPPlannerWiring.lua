@@ -702,9 +702,13 @@ end
 local function KWHasCD(sid)
     if type(_G.GetSpellBaseCooldown) == "function" then
         local ok, cd = pcall(_G.GetSpellBaseCooldown, sid)
-        if ok and type(cd) == "number" then return cd > 1500 end -- > GCD = vrai CD
+        if ok and type(cd) == "number" and cd > 1500 then return true end -- > GCD = vrai CD
     end
-    return string.find(KWText(sid), "cooldown", 1, true) ~= nil
+    -- la propriete rate les sorts a charges d'Ascension ("3 Charges, 30 sec
+    -- recharge") -> completer par le texte : cooldown OU recharge
+    local t = KWText(sid)
+    return string.find(t, "cooldown", 1, true) ~= nil
+        or string.find(t, "recharge", 1, true) ~= nil
 end
 
 -- cout : rage/energy/mana par GetSpellInfo (cost+powerType) ; sinon on ne matche
@@ -845,7 +849,8 @@ local KW_GROUPS = {
     }, icon = "Spell_Nature_Polymorph" },
     { "Defense", {
         { "Armor" }, { "Block" }, { "Dodge" },
-        { "Parry" }, { "Absorb" }, { "Threat" },
+        { "Parry", match = "parr" }, -- parry / parried / parries
+        { "Absorb" }, { "Threat" },
     }, icon = "Ability_Defend" },
     { "Healing", {
         { "Heal" }, { "Restore" }, { "Drain" },
