@@ -1,16 +1,19 @@
-﻿CA_ABILITY_MASTERIES = CA_ABILITY_MASTERIES or "Ability Masteries"
-CA_ABILITY_MASTERIES_DESC = CA_ABILITY_MASTERIES_DESC or "Masteries bundle related spells together for the cost of one ability. You automatically unlock additional spells from your Masteries when you reach their Class Point requirements."
-CA_TRAITS_TITLE = CA_TRAITS_TITLE or "Implicit Traits"
-CA_TRAITS_DESC = CA_TRAITS_DESC or "Implicit Traits unlock automatically when reaching their required Class Points, and deactivate if you fall below that threshold."
-CA_LEARN_SPELLS_UP_TO_LEVEL = CA_LEARN_SPELLS_UP_TO_LEVEL or "Learn Spells up to level |cffFFFFFF%d|r"
-CA_TALENTS_GRANT_UP_TO_LEVEL = CA_TALENTS_GRANT_UP_TO_LEVEL or "Talents grant %s Points up to level |cffFFFFFF%d|r"
-CA_LEARN_MODE_RESTRICTED = CA_LEARN_MODE_RESTRICTED or "Only available in certain game modes."
+﻿-- FORK RULE (v8.2, taint.log) : never assign a CA_* global. The client reads
+-- them back (CharacterAdvancementUtil.AreTalentGatesEnabled reads
+-- CA_USE_GATES_DEBUG), so an addon write taints them and every client function
+-- that touches one afterwards -- which blocked GetCurrentTicket() and
+-- CanPerformAction() during the login sequence. Read the client value, own a
+-- BPCA_ copy. Any future re-fork of the pristine file must redo this.
+BPCA_ABILITY_MASTERIES = CA_ABILITY_MASTERIES or "Ability Masteries"
+BPCA_ABILITY_MASTERIES_DESC = CA_ABILITY_MASTERIES_DESC or "Masteries bundle related spells together for the cost of one ability. You automatically unlock additional spells from your Masteries when you reach their Class Point requirements."
+BPCA_TRAITS_TITLE = CA_TRAITS_TITLE or "Implicit Traits"
+BPCA_TRAITS_DESC = CA_TRAITS_DESC or "Implicit Traits unlock automatically when reaching their required Class Points, and deactivate if you fall below that threshold."
+BPCA_LEARN_SPELLS_UP_TO_LEVEL = CA_LEARN_SPELLS_UP_TO_LEVEL or "Learn Spells up to level |cffFFFFFF%d|r"
+BPCA_TALENTS_GRANT_UP_TO_LEVEL = CA_TALENTS_GRANT_UP_TO_LEVEL or "Talents grant %s Points up to level |cffFFFFFF%d|r"
+BPCA_LEARN_MODE_RESTRICTED = CA_LEARN_MODE_RESTRICTED or "Only available in certain game modes."
 
--- TODO: Move to constants?
-if C_Player:IsHero() then
-    CA_USE_GATES_DEBUG = true
-end
---
+-- pristine set CA_USE_GATES_DEBUG here; dropped -- the plan view forces
+-- AreTalentGatesEnabled() to false anyway (BPPlannerWiring section 6).
 
 BPCharacterAdvancementMixin = {}
 
@@ -171,8 +174,10 @@ end
 function BPCharacterAdvancementMixin:OnGameModeChanged()
     self:ShowNormalFooter()
 
-    CA_USE_GATES_DEBUG = false
-    C_CVar.Set("previewCharacterAdvancementChanges", "0")
+    -- pristine toggled CA_USE_GATES_DEBUG and the previewCharacterAdvancementChanges
+    -- CVar here. Both are REAL client state (see the header rule): the first taints,
+    -- the second changes what the player's own CA window shows. The planner only
+    -- keeps the layout below.
 
     if C_GameMode:IsGameModeActive(Enum.GameMode.Draft) then
         self.mode = Enum.GameMode.Draft
@@ -180,8 +185,6 @@ function BPCharacterAdvancementMixin:OnGameModeChanged()
         PortraitFrame_SetIcon(self, "Interface\\Icons\\inv_misc_dmc_destructiondeck")
         self.Content.WCRapidRollButton:Hide()
 
-        CA_USE_GATES_DEBUG = true
-        C_CVar.Set("previewCharacterAdvancementChanges", "1")
         self:ShowMaximizedFooter()
     elseif C_GameMode:IsGameModeActive(Enum.GameMode.WildCard) then
         self.mode = Enum.GameMode.WildCard
@@ -201,8 +204,6 @@ function BPCharacterAdvancementMixin:OnGameModeChanged()
         self.mode = Enum.GameMode.None
         PortraitFrame_SetTitle(self, CHARACTER_ADVANCEMENT)
         if C_Player:IsDefaultClass() then
-            CA_USE_GATES_DEBUG = true
-            C_CVar.Set("previewCharacterAdvancementChanges", "1")
             self:ShowMaximizedFooter()
             PortraitFrame_SetClassIcon(self, C_Player:GetClass())
         else
@@ -212,9 +213,7 @@ function BPCharacterAdvancementMixin:OnGameModeChanged()
         if C_Player:IsHero() then
             if C_Config.GetBoolConfig("CONFIG_CHARACTER_ADVANCEMENT_QUALITIES_ENABLED") then
                 self:ShowRarityFlyout()
-            else -- instead of rarity 
-                CA_USE_GATES_DEBUG = true
-                C_CVar.Set("previewCharacterAdvancementChanges", "1")
+            else -- instead of rarity
                 self:ShowMaximizedFooter()
             end
         end
@@ -484,8 +483,8 @@ function BPCharacterAdvancementMixin:RefreshHeaderTotal()
 
         local className = classFile and LOCALIZED_CLASS_NAMES_MALE[string.upper(classFile)] or ""
 
-        self.Content.HeaderSpells.SubText:SetText(CA_LEARN_SPELLS_UP_TO_LEVEL:format(fakeLevel)) 
-        self.Content.HeaderTalents.SubText:SetText(CA_TALENTS_GRANT_UP_TO_LEVEL:format(className, math.max(10, fakeLevel)))
+        self.Content.HeaderSpells.SubText:SetText(BPCA_LEARN_SPELLS_UP_TO_LEVEL:format(fakeLevel))
+        self.Content.HeaderTalents.SubText:SetText(BPCA_TALENTS_GRANT_UP_TO_LEVEL:format(className, math.max(10, fakeLevel)))
     end
 
     if C_Player:IsDefaultClass() then
@@ -1263,8 +1262,12 @@ function BPCharacterAdvancementMixin:RefreshCurrencies()
         aeCount = remainingAE
         teCount = remainingTE
     else
-        aeCount = C_CharacterAdvancement.IsPending() and C_CharacterAdvancement.GetPendingRemainingAE() or GetItemCount(ItemData.ABILITY_ESSENCE)
-        teCount = C_CharacterAdvancement.IsPending() and C_CharacterAdvancement.GetPendingRemainingTE() or GetItemCount(ItemData.TALENT_ESSENCE)
+        -- fresh characters: IsPending() hard-errors at login before the CA data
+        -- arrives ("IsPending: pending build is not available") -- treat as "no"
+        local ok, pending = pcall(C_CharacterAdvancement.IsPending)
+        pending = ok and pending
+        aeCount = pending and C_CharacterAdvancement.GetPendingRemainingAE() or GetItemCount(ItemData.ABILITY_ESSENCE)
+        teCount = pending and C_CharacterAdvancement.GetPendingRemainingTE() or GetItemCount(ItemData.TALENT_ESSENCE)
     end
 
     --aeCount = (aeCount == 0) and DISABLED_FONT_COLOR:WrapText(aeCount) or aeCount
@@ -1899,10 +1902,10 @@ function BPCharacterAdvancementMixin:SetMasteriesAndTraits(classFile)
     masteryHeader:SetPoint("TOP", 0, -yStarting)
     masteryHeader:SetSize(self.Content:GetWidth()-spacing*2, 32)
     masteryHeader:Show()
-    masteryHeader.Title:SetText(CA_ABILITY_MASTERIES)
-    masteryHeader.tooltipTitle = CA_ABILITY_MASTERIES
-    masteryHeader.tooltipText = CA_ABILITY_MASTERIES_DESC
-    masteryHeader.Description:SetText(CA_ABILITY_MASTERIES_DESC)
+    masteryHeader.Title:SetText(BPCA_ABILITY_MASTERIES)
+    masteryHeader.tooltipTitle = BPCA_ABILITY_MASTERIES
+    masteryHeader.tooltipText = BPCA_ABILITY_MASTERIES_DESC
+    masteryHeader.Description:SetText(BPCA_ABILITY_MASTERIES_DESC)
 
     yStarting = yStarting + (masteryHeader:GetHeight()*2) + spacing
 
@@ -1950,10 +1953,10 @@ function BPCharacterAdvancementMixin:SetMasteriesAndTraits(classFile)
     traitsHeader:SetPoint("TOP", 0, -y)
     traitsHeader:SetSize(self.Content:GetWidth()-spacing*2, 32)
     traitsHeader:Show()
-    traitsHeader.Title:SetText(CA_TRAITS_TITLE)
-    traitsHeader.tooltipTitle = CA_TRAITS_TITLE
-    traitsHeader.tooltipText = CA_TRAITS_DESC
-    traitsHeader.Description:SetText(CA_TRAITS_DESC)
+    traitsHeader.Title:SetText(BPCA_TRAITS_TITLE)
+    traitsHeader.tooltipTitle = BPCA_TRAITS_TITLE
+    traitsHeader.tooltipText = BPCA_TRAITS_DESC
+    traitsHeader.Description:SetText(BPCA_TRAITS_DESC)
 
     yStarting = y + (traitsHeader:GetHeight()*2) + spacing
 

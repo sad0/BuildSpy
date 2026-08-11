@@ -58,10 +58,11 @@ local function IsCategoryHidden(categoryID)
 end
 
 
-CA_BROWSER_UNLOCKS_AT_LEVEL = CA_BROWSER_UNLOCKS_AT_LEVEL or "Unlocks at level: %s"
-CA_CLICK_TO_REMOVE_FILTER = CA_CLICK_TO_REMOVE_FILTER or "Click to remove filter"
-CA_BROWSER_CLASS_TITLE_RECENTLY = CA_BROWSER_CLASS_TITLE_RECENTLY or "Recently unlocked |cffFFFFFF%s|r abilities"
-CA_BROWSER_CLASS_TITLE_SOON = CA_BROWSER_CLASS_TITLE_SOON or "|cffFFFFFF%s|r abilities soon to be unlocked"
+-- BPCA_ copies, never assign a CA_* global (see the BPCharacterAdvancement header)
+BPCA_BROWSER_UNLOCKS_AT_LEVEL = CA_BROWSER_UNLOCKS_AT_LEVEL or "Unlocks at level: %s"
+BPCA_CLICK_TO_REMOVE_FILTER = CA_CLICK_TO_REMOVE_FILTER or "Click to remove filter"
+BPCA_BROWSER_CLASS_TITLE_RECENTLY = CA_BROWSER_CLASS_TITLE_RECENTLY or "Recently unlocked |cffFFFFFF%s|r abilities"
+BPCA_BROWSER_CLASS_TITLE_SOON = CA_BROWSER_CLASS_TITLE_SOON or "|cffFFFFFF%s|r abilities soon to be unlocked"
 
 local FILTER_TO_STRING_TABLE = {
 	["FILTER_KNOWN"] = CA_FILTER_KNOWN_IN_BUILD,
@@ -138,7 +139,7 @@ end
 function BPCASpellTagMixin:OnEnter()
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(self.Text:GetText(), 1, 1, 1)
-	GameTooltip:AddLine(CA_CLICK_TO_REMOVE_FILTER)
+	GameTooltip:AddLine(BPCA_CLICK_TO_REMOVE_FILTER)
 	GameTooltip:Show()
 end
 
@@ -306,9 +307,9 @@ function BPCABrowserAbilityMixin:OnEnter()
 	if self.isClass then
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		if self.isSoonClass then
-			GameTooltip:AddLine(CA_BROWSER_CLASS_TITLE_SOON:format(self.ClassPoints.Count:GetText()), 1, 0.82, 0, true)
+			GameTooltip:AddLine(BPCA_BROWSER_CLASS_TITLE_SOON:format(self.ClassPoints.Count:GetText()), 1, 0.82, 0, true)
 		else
-			GameTooltip:AddLine(CA_BROWSER_CLASS_TITLE_RECENTLY:format(self.ClassPoints.Count:GetText()), 1, 0.82, 0, true)
+			GameTooltip:AddLine(BPCA_BROWSER_CLASS_TITLE_RECENTLY:format(self.ClassPoints.Count:GetText()), 1, 0.82, 0, true)
 		end
 		GameTooltip:Show()
 	else
@@ -516,7 +517,7 @@ function BPCABrowserRowMixin:UpdateCategoryVisual()
 	self.tooltipTitle = name
 	self.tooltipText = description or "No description for this category is filled yet. Please update data."
 
-    self:SetAvailableVisual(reqLevel <= UnitLevel("player"), name, name.." ("..string.format(CA_BROWSER_UNLOCKS_AT_LEVEL, "|cffFF0000"..reqLevel.."|r")..")|r")
+    self:SetAvailableVisual(reqLevel <= UnitLevel("player"), name, name.." ("..string.format(BPCA_BROWSER_UNLOCKS_AT_LEVEL,"|cffFF0000"..reqLevel.."|r")..")|r")
 end
 
 function BPCABrowserRowMixin:LoadEntry(button, index)

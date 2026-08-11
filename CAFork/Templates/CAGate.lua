@@ -5,7 +5,8 @@ CA_GATE_INFO = CA_GATE_INFO or "You have |cffFFFFFF%s|r %s Talent Essence Invest
 CA_GATE_INFO_CLASS_POINTS = CA_GATE_INFO_CLASS_POINTS or "You have |cffFFFFFF%s|r %s |cffFFFFFFClass Points|r"
 CA_GATE_INFO_CLASS_POINTS_HINT = CA_GATE_INFO_CLASS_POINTS_HINT or "Class Points are: TODO: FILL THIS TEXT"]]--
 
-CA_POINTS_GLOBAL_STRING = CA_POINTS_GLOBAL_STRING or "Points: %s"
+-- BPCA_ copy, never assign a CA_* global (see the BPCharacterAdvancement header)
+BPCA_POINTS_GLOBAL_STRING = CA_POINTS_GLOBAL_STRING or "Points: %s"
 
 local CA_GATE_ICON_GLOBAL_TE = "Interface\\Icons\\inv_custom_talentessence"
 local CA_GATE_ICON_GLOBAL_AE = "Interface\\Icons\\inv_custom_abilityessence"
@@ -164,9 +165,9 @@ function BPCATalentGateCounterMixin:DefineText(gateType, class, spec)
     class = string.gsub(class:lower(), "reborn", "")
     if gateType == "TAB" and class and spec then
         local classInfo = C_ClassInfo.GetSpecInfo(string.upper(class), string.upper(spec))
-        return classInfo.Name.." "..CA_POINTS_GLOBAL_STRING
+        return classInfo.Name.." "..BPCA_POINTS_GLOBAL_STRING
     elseif gateType == "CLASS" and class then
-        return LOCALIZED_CLASS_NAMES_MALE[string.upper(class)].." "..CA_POINTS_GLOBAL_STRING
+        return LOCALIZED_CLASS_NAMES_MALE[string.upper(class)].." "..BPCA_POINTS_GLOBAL_STRING
     end
 
     return "%d"

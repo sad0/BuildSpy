@@ -187,7 +187,16 @@ ui:RegisterForDrag("LeftButton")
 ui:SetScript("OnDragStart", function(self) if not self.docked then self:StartMoving() end end)
 ui:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 ui:Hide()
-tinsert(UISpecialFrames, "BuildPlannerFrame")
+-- UISpecialFrames is walked by CloseSpecialWindows during the login sequence;
+-- our entry (and the frame it resolves to) taints that pass. Register on first
+-- show instead -- by then login is over, and a window that has never been
+-- opened does not need an ESC handler anyway.
+local escRegistered
+local function RegisterEscapeClose()
+    if escRegistered then return end
+    escRegistered = true
+    tinsert(UISpecialFrames, "BuildPlannerFrame")
+end
 if themed then
     pcall(function() PortraitFrame_SetIcon(ui, "Interface\\Icons\\Ability_Spy") end)
     pcall(function() PortraitFrame_SetTitle(ui, "Build Planer") end)
@@ -681,6 +690,7 @@ pre:SetScript("OnUpdate", function(self)
 end)
 
 ui:SetScript("OnShow", function()
+    RegisterEscapeClose()
     BuildEntries()
     BuildSidebar()
     nameBox:SetText(PDB().name or "My Plan")
