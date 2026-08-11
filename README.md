@@ -141,10 +141,16 @@ style: other BuildSpy users can click the link to receive the full build
 
 ## Installation
 
-1. Download the latest version (Code → Download ZIP).
-2. Extract the `BuildSpy` folder into `Interface\AddOns\` so you end up with
-   `Interface\AddOns\BuildSpy\BuildSpy.toc`.
+1. Download the zip from the [latest release](https://github.com/sad0/BuildSpy/releases/latest).
+2. Extract it into `Interface\AddOns\` so you end up with
+   `Interface\AddOns\BuildSpy\BuildSpy.toc` (the zip already contains the
+   correctly named `BuildSpy` folder).
 3. Restart the game client (a full restart, not a `/reload`).
+
+If you see *"BuildSpy has been blocked from an action only available to the
+Blizzard UI"* (`GetCurrentTicket()`) on login, click **Ignore** — the client
+only blocks the refresh of the GM-ticket status banner, nothing else. A fix
+is being investigated.
 
 No dependencies — works standalone. A draggable minimap button toggles the
 builds window (the *minimap button* checkbox in the window hides it).
