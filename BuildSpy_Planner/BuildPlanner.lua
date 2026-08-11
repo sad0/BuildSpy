@@ -761,7 +761,9 @@ local function TryRegisterTab()
     return true
 end
 local watcher = CreateFrame("Frame")
-watcher.acc, watcher.tries = 0, 0
+-- acc starts spent: we are load-on-demand, so Collections is usually already open
+-- by the time we arrive and the tab must not lag two seconds behind the window.
+watcher.acc, watcher.tries = 2, 0
 watcher:SetScript("OnUpdate", function(self, e)
     self.acc = self.acc + e
     if self.acc < 2 then return end

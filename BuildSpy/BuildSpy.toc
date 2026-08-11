@@ -8,8 +8,4 @@
 
 AscensionInspector.lua
 SkillCardPlanner.lua
-BuildPlanner.lua
-CAFork\Templates\CharacterAdvancementTemplates.xml
-CAFork\Browser\CharacterAdvancementBrowser.xml
-CAFork\CharacterAdvancement.xml
-CAFork\BPPlannerWiring.lua
+PlannerLoader.lua

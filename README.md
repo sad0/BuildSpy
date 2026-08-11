@@ -142,15 +142,20 @@ style: other BuildSpy users can click the link to receive the full build
 ## Installation
 
 1. Download the zip from the [latest release](https://github.com/sad0/BuildSpy/releases/latest).
-2. Extract it into `Interface\AddOns\` so you end up with
-   `Interface\AddOns\BuildSpy\BuildSpy.toc` (the zip already contains the
-   correctly named `BuildSpy` folder).
+2. Extract it into `Interface\AddOns\`. The zip contains **two** correctly named
+   folders — keep them side by side:
+
+   ```
+   Interface\AddOns\BuildSpy\BuildSpy.toc
+   Interface\AddOns\BuildSpy_Planner\BuildSpy_Planner.toc
+   ```
+
 3. Restart the game client (a full restart, not a `/reload`).
 
-If you see *"BuildSpy has been blocked from an action only available to the
-Blizzard UI"* (`GetCurrentTicket()`) on login, click **Ignore** — the client
-only blocks the refresh of the GM-ticket status banner, nothing else. A fix
-is being investigated.
+`BuildSpy_Planner` holds the Build Planer and is *load on demand*: it stays out
+of memory until you open the planner or the Collections window, exactly like the
+game's own Character Advancement addon. Leave it enabled — `BuildSpy` loads it
+by itself when needed.
 
 No dependencies — works standalone. A draggable minimap button toggles the
 builds window (the *minimap button* checkbox in the window hides it).

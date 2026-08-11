@@ -1,0 +1,13 @@
+## Interface: 30300
+## Title: BuildSpy |cff808080Build Planer|r
+## Notes: Build Planer for BuildSpy: a fork of the Character Advancement window that edits a PLAN instead of your character. Loaded on demand -- opening the planner (or the Collections window) loads it.
+## Author: sad0 & claude
+## Version: 8.2
+## LoadOnDemand: 1
+## Dependencies: BuildSpy
+
+BuildPlanner.lua
+CAFork\Templates\CharacterAdvancementTemplates.xml
+CAFork\Browser\CharacterAdvancementBrowser.xml
+CAFork\CharacterAdvancement.xml
+CAFork\BPPlannerWiring.lua
