@@ -79,8 +79,9 @@ Notes:
 ## Reproduce builds
 
 - **→ Skill Cards** — optimizes and **places your Skill Cards** for the
-  selected build: golden pools first, rarest cards first, starters = the
-  build's level-1 spells, never a duplicate, verified slot by slot.
+  selected build: rarest cards in the golden pools first => regular cards
+  => starters. Optimising card rarity, not gameplay. So you better check
+  what it did by yourself.
 
 ![Skill Cards](screenshots/skill-cards.png)
 
@@ -104,6 +105,8 @@ you in chat to double-check the result yourself.
 
 A new **Build Planer** tab in the Collections window (next to Character
 Advancement) — the CA book itself, rewired into a planner:
+
+![Build Planer](screenshots/build-planer.png)
 
 - Start from a **blank plan** and click spells/talents in the right-hand list
   to add them (click again or right-click to remove). Your picks jump to the

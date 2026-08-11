@@ -462,7 +462,11 @@ function planUtil.MarkForSwap() end
 function planUtil.AreTalentGatesEnabled() return false end
 
 local planEnv = setmetatable(
-    { C_CharacterAdvancement = planCA, CharacterAdvancementUtil = planUtil },
+    { C_CharacterAdvancement = planCA, CharacterAdvancementUtil = planUtil,
+      -- le VRAI selecteur de Path (Ascension_ForcedPrimaryStat) ne doit JAMAIS
+      -- s'ouvrir depuis le planner : il change le path DU JOUEUR
+      ShowForcedPrimaryStat = function() return false end,
+      ForcedPrimaryStatFrame = false },
     { __index = _G, __newindex = _G })
 local function ApplyPlanView()
     -- tous les mixins du fork (BPCA...Mixin) -- et EUX SEULS, jamais le client
@@ -603,6 +607,60 @@ local function WireSearch(f)
     end
     -- re-liste immediatement si la fenetre est deja ouverte
     if f:IsShown() then pcall(function() f:Search() end) end
+end
+
+-- ===================== 9) bouton Path du header = path DU PLAN =====================
+-- le bouton "Path of ..." au-dessus de la liste a un OnClick XML INLINE (hors
+-- mixins, invisible au setfenv) qui appelait ShowForcedPrimaryStat -> le VRAI
+-- choix de Path du perso (bug user 11/08). Remplace : dropdown des 5 paths -> plan.
+local pathMenu = CreateFrame("Frame", "BPPlannerPathMenu", UIParent, "UIDropDownMenuTemplate")
+local PATH_ORDER = { 1149, 1150, 1151, 1152, 18149 }
+local function WirePathButton(f)
+    local ns = f.SideBar and f.SideBar.SpellList and f.SideBar.SpellList.Header
+        and f.SideBar.SpellList.Header.NineSlice
+    local btn = ns and ns.PrimaryStat1
+    if not btn then return end
+    btn:SetScript("OnClick", function(self)
+        UIDropDownMenu_Initialize(pathMenu, function()
+            local pl = PDB()
+            for _, id in ipairs(PATH_ORDER) do
+                local name = PATH_IDS[id]
+                local e = EntryOf(id)
+                local label = (e and e.Name) or ("Path of " .. name)
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = label
+                info.checked = (pl.path == name)
+                info.func = function()
+                    pl.path = name
+                    RefreshAllViews()
+                    Msg("plan path = |cffffd100" .. label .. "|r.")
+                end
+                UIDropDownMenu_AddButton(info)
+            end
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "None"
+            info.checked = (PDB().path == nil)
+            info.func = function()
+                PDB().path = nil
+                RefreshAllViews()
+            end
+            UIDropDownMenu_AddButton(info)
+        end, "MENU")
+        ToggleDropDownMenu(1, nil, pathMenu, self, 0, 0)
+    end)
+    -- l'icone du header reflete le path DU PLAN (post-hook : gagne sur l'original)
+    hooksecurefunc(f, "RefreshPrimaryStats", function()
+        local pl = PDB()
+        if not pl.path then return end
+        for _, id in ipairs(PATH_ORDER) do
+            if PATH_IDS[id] == pl.path then
+                local e = EntryOf(id)
+                if e then pcall(function() btn:SetEntry(e) end) end
+                return
+            end
+        end
+    end)
+    pcall(function() f:RefreshPrimaryStats() end)
 end
 
 -- ===================== 8) panneau KEYWORDS =====================
@@ -976,6 +1034,7 @@ local function Apply()
         WireSearch(f)
         WireSpellListRows(f)
         WireKeywords(f)
+        WirePathButton(f)
         -- onglet Specs retire : redondant avec BuildSpy (user 11/08)
         f.SideBar:HideTabID(f.SideBar.SpecTab)
         f.SideBar:SelectTabID(f.SideBar.SpellsTab)
