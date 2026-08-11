@@ -702,6 +702,19 @@ local function KWPass(e)
             if q ~= def.quality then return false end
         elseif def.cd ~= nil then
             if KWHasCD(sid) ~= def.cd then return false end
+        elseif def.any then -- OU de sous-chaines (+ castTime en propriete si demande)
+            local hit = false
+            if def.castTime then
+                local ct = select(7, GetSpellInfo(sid))
+                hit = (ct or 0) > 0
+            end
+            if not hit then
+                local t = KWText(sid)
+                for _, m in ipairs(def.any) do
+                    if string.find(t, m, 1, true) then hit = true break end
+                end
+            end
+            if not hit then return false end
         elseif def.ptype or def.patterns then
             if not KWCost(sid, def) then return false end
         elseif not string.find(KWText(sid), def.match, 1, true) then
@@ -751,8 +764,9 @@ local KW_GROUPS = {
         { "Physical" }, { "Damage" },
     } },
     { "Combat", {
-        { "Melee" }, { "Ranged" }, { "Weapon" },
-        { "Attack" }, { "Cast" }, { "Instant" },
+        { "Melee" }, { "Range" }, { "Weapon" },
+        { "Attack" }, { "Casting", any = { "sec cast", "channel" }, castTime = true },
+        { "Instant" },
     } },
     { "Control", {
         { "Stun" }, { "Slow" }, { "Root" },
